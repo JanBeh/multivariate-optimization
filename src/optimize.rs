@@ -228,7 +228,8 @@ where
     pub fn dim(&self) -> usize {
         self.search_space.len()
     }
-    /// Simply calculation by dividing dimensions into a given number of groups
+    /// Simplify calculation by dividing dimensions into a given number of
+    /// groups
     ///
     /// Divides dimensions into (almost) equally sized groups when calculating
     /// covariances to reduce computation time. The number of groups is given
