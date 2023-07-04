@@ -16,3 +16,7 @@ criterion = "0.5.1"
 [[bench]]
 name = "distributions"
 harness = false
+
+[[bench]]
+name = "optimize"
+harness = false
