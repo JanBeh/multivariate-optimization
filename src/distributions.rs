@@ -66,6 +66,29 @@ impl<T: Num> Distribution<(T, T)> for StdNormDistPair {
     }
 }
 
+/// Univariate standard normal distribtion with variable length output
+#[derive(Clone, Copy, Default, Debug)]
+pub struct StdNormDistVec(
+    /// Number of elements in [`Vec`] sample
+    pub usize,
+);
+
+impl<T: Num> Distribution<Vec<T>> for StdNormDistVec {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Vec<T> {
+        let dim = self.0;
+        let mut vec = Vec::with_capacity(dim);
+        for _ in 0..dim/2 {
+            let (x, y) = StdNormDistPair.sample(rng);
+            vec.push(x);
+            vec.push(y);
+        }
+        if dim % 2 == 1 {
+            vec.push(StdNormDist.sample(rng));
+        }
+        vec
+    }
+}
+
 /// Univariate (non-standard) normal distribtion with given average and
 /// standard deviation
 #[derive(Clone, Debug)]
@@ -162,15 +185,7 @@ impl<T: Num> MultivarDist<T> for MultivarNormDist<T> {
 impl<T: Num> Distribution<Vec<T>> for MultivarNormDist<T> {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Vec<T> {
         let dim = self.dim();
-        let mut result: Vec<T> = Vec::with_capacity(dim);
-        for _ in 0..dim/2 {
-            let (x1, x2) = StdNormDistPair.sample(rng);
-            result.push(x1);
-            result.push(x2);
-        }
-        if dim % 2 == 1 {
-            result.push(StdNormDist.sample(rng));
-        }
+        let mut result: Vec<T> = StdNormDistVec(dim).sample(rng);
         // SAFETY:
         //  *  `i` is smaller than `self.dim()` and thus smaller
         //     than `result.len()` and `self.factors.dim()`

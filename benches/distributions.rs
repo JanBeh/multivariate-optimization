@@ -20,6 +20,14 @@ fn main() {
             (x, y)
         });
     });
+    let mut c = Criterion::default().configure_from_args();
+    c.bench_function("StdNormDistVec(2)::sample", |b| {
+        let rng = &mut thread_rng();
+        b.iter(|| {
+            let vec: Vec<f64> = StdNormDistVec(2).sample(rng);
+            vec
+        });
+    });
     c.bench_function("NormDist::sample", |b| {
         let rng = &mut thread_rng();
         b.iter(|| {
