@@ -77,7 +77,7 @@ impl<T: Num> Distribution<Vec<T>> for StdNormDistVec {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Vec<T> {
         let dim = self.0;
         let mut vec = Vec::with_capacity(dim);
-        for _ in 0..dim/2 {
+        for _ in 0..dim / 2 {
             let (x, y) = StdNormDistPair.sample(rng);
             vec.push(x);
             vec.push(y);

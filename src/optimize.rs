@@ -44,7 +44,9 @@ use crate::triangular::Triangular;
 use rand::distributions::{Distribution, Uniform};
 use rand::Rng;
 use rayon::prelude::*;
+
 use std::cmp::Ordering;
+use std::ops::RangeInclusive;
 
 /// Search range for a single dimension
 ///
@@ -67,6 +69,15 @@ pub enum SearchRange {
         /// Initial standard deviation for starting search
         stddev: f64,
     },
+}
+
+impl From<RangeInclusive<f64>> for SearchRange {
+    fn from(range: RangeInclusive<f64>) -> Self {
+        SearchRange::Finite {
+            low: *range.start(),
+            high: *range.end(),
+        }
+    }
 }
 
 /// Enum with one-dimensional distribution used for initial search
@@ -421,16 +432,11 @@ mod tests {
         let mut rng = thread_rng();
         const PARAMCNT: usize = 3;
         let ranges = vec![-1.0..=1.0; PARAMCNT];
-        let search_space: Vec<SearchRange> = ranges
-            .iter()
-            .map(|range| SearchRange::Finite {
-                low: *range.start(),
-                high: *range.end(),
-            })
-            .collect();
+        let search_space: Vec<SearchRange> = ranges.iter().cloned().map(Into::into).collect();
         let goals: Vec<f64> = ranges
             .iter()
-            .map(|range| rng.gen_range(range.clone()))
+            .cloned()
+            .map(|range| rng.gen_range(range))
             .collect();
         let mut solver = Solver::new(search_space, |params| {
             let mut cost: f64 = 0.0;
