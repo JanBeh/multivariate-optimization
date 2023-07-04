@@ -9,6 +9,7 @@
 pub mod conquer;
 pub mod distributions;
 pub mod optimize;
+pub mod testfuncs;
 pub mod triangular;
 
 pub use optimize::*;

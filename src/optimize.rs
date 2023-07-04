@@ -4,15 +4,9 @@
 //!
 //! ```
 //! use multivariate_optimization::optimize::*;
+//! use multivariate_optimization::testfuncs::rastrigin;
 //! use rand::{Rng, thread_rng};
 //! let mut rng = thread_rng();
-//!
-//! fn rastrigin(args: &[f64]) -> f64 {
-//!     const PI: f64 = std::f64::consts::PI;
-//!     const A: f64 = 10.0;
-//!     let n = args.len() as f64;
-//!     A * n + args.iter().copied().map(|x| x * x - A * (2.0 * PI * x).cos()).sum::<f64>()
-//! }
 //!
 //! const DIM: usize = 3;
 //! let search_space: Vec<SearchRange> = (0..DIM).map(|_| {
