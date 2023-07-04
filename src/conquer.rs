@@ -8,7 +8,7 @@ use std::ops::Deref;
 #[derive(Debug)]
 pub struct Conqueror {
     assignments: Box<[usize]>,
-    groups: Box<[Box<[usize]>]>,
+    groups: Box<[Vec<usize>]>,
 }
 
 impl Conqueror {
@@ -31,7 +31,7 @@ impl Conqueror {
             .into_iter()
             .map(|i| i % group_count)
             .collect();
-        let mut groups: Vec<Vec<usize>> = (0..group_count).map(|_| Vec::<usize>::new()).collect();
+        let mut groups: Box<[Vec<usize>]> = (0..group_count).map(|_| Vec::<usize>::new()).collect();
         if source_len > 0 {
             assignments.shuffle(rng);
             for group in groups.iter_mut() {
@@ -41,8 +41,6 @@ impl Conqueror {
                 groups[assignment].push(source_idx);
             }
         }
-        let groups: Box<[Box<[usize]>]> =
-            groups.into_iter().map(|x| x.into_boxed_slice()).collect();
         Conqueror {
             assignments,
             groups,
