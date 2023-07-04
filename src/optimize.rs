@@ -26,21 +26,19 @@
 //!
 //! solver.initialize(POPULATION);
 //! for iter in 0..MAX_ITERATIONS {
-//!     {
-//!         solver.sort();
-//!         println!(
-//!             "{} {}",
-//!             solver.specimens()[0].cost,
-//!             solver.specimens().last().unwrap().cost,
-//!         );
-//!     }
+//!     let specimens = solver.specimens();
+//!     println!(
+//!         "{} {}",
+//!         specimens[0].cost,
+//!         specimens[specimens.len()-1].cost,
+//!     );
 //!     if solver.converged() {
 //!         break;
 //!     }
 //!     solver.evolution(POPULATION);
 //! }
-//! let specimens = solver.into_specimens();
-//! assert_eq!(specimens[0].cost, 0.0);
+//! let specimen = solver.into_specimen();
+//! assert_eq!(specimen.cost, 0.0);
 //! ```
 //!
 //! See also [`Solver`].
@@ -433,18 +431,17 @@ where
             self.specimens[0].cmp_cost(&self.specimens[len - 1]) == Ordering::Equal
         }
     }
-    /// Possibly unsorted population of [`Specimen`]s as shared slice.
-    ///
-    /// It is required to call [`Solver::sort`] first, if a sorted list of
-    /// specimen is desired.
-    pub fn specimens(&self) -> &[S] {
+    /// Sorted population of [`Specimen`]s as shared slice (best first).
+    pub fn specimens(&mut self) -> &[S] {
+        self.sort();
         &self.specimens
     }
-    /// Possibly unsorted population of [`Specimen`]s as mutable [`Vec`]
+    /// Sorted population of [`Specimen`]s as mutable [`Vec`] (best first).
     ///
-    /// It is required to call [`Solver::sort`] first, if a sorted list of
-    /// specimen is desired.
+    /// The `Vec` may be modified and doesn't need to be (re-)sorted by the
+    /// caller after modifying.
     pub fn specimens_mut(&mut self) -> &mut Vec<S> {
+        self.sort();
         self.is_sorted = false;
         &mut self.specimens
     }
