@@ -156,21 +156,24 @@ impl<T: Num> MultivarDist<T> for MultivarNormDist<T> {
 
 impl<T: Num> Distribution<Vec<T>> for MultivarNormDist<T> {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Vec<T> {
-        let std_iter = StdNormDist::<T>::new().sample_iter(rng);
-        let mut result: Vec<T> = std_iter.take(self.dim()).collect();
+        let dim = self.dim();
+        let mut result: Vec<T> = Vec::with_capacity(dim);
+        for _ in 0..dim {
+            result.push(StdNormDist::<T>::new().sample(rng));
+        }
         // SAFETY:
         //  *  `i` is smaller than `self.dim()` and thus smaller
         //     than `result.len()` and `self.factors.dim()`
         //  *  `j` is equal to or smaller than `i`
         unsafe {
-            for i in (0..self.dim()).rev() {
+            for i in (0..dim).rev() {
                 let mut sum = T::zero();
                 for j in 0..=i {
                     sum += *result.get_unchecked(j) * *self.factors.get_unchecked((i, j));
                 }
                 *result.get_unchecked_mut(i) = sum;
             }
-            for i in 0..self.dim() {
+            for i in 0..dim {
                 *result.get_unchecked_mut(i) += *self.averages.get_unchecked(i);
             }
         }
