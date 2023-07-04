@@ -355,8 +355,8 @@ where
                     let i_orig = group[i];
                     let j_orig = group[j];
                     self.specimens
-                        .par_iter()
-                        .zip(weights.par_iter().copied())
+                        .iter()
+                        .zip(weights.iter().copied())
                         .map(|(specimen, weight)| {
                             let a = specimen.params()[i_orig] - averages[i];
                             let b = specimen.params()[j_orig] - averages[j];
