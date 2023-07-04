@@ -26,13 +26,21 @@
 //!
 //! solver.initialize(POPULATION);
 //! for iter in 0..MAX_ITERATIONS {
-//!     println!("{} {}", solver.specimens()[0].cost, solver.specimens().last().unwrap().cost);
+//!     {
+//!         solver.sort();
+//!         println!(
+//!             "{} {}",
+//!             solver.specimens()[0].cost,
+//!             solver.specimens().last().unwrap().cost,
+//!         );
+//!     }
 //!     if solver.converged() {
 //!         break;
 //!     }
 //!     solver.evolution(POPULATION);
 //! }
-//! assert_eq!(solver.specimens()[0].cost, 0.0);
+//! let specimens = solver.into_specimens();
+//! assert_eq!(specimens[0].cost, 0.0);
 //! ```
 //!
 //! See also [`Solver`].
@@ -189,6 +197,7 @@ pub struct Solver<S, C> {
     constructor: C,
     division_count: usize,
     min_population: usize,
+    is_sorted: bool,
     specimens: Vec<S>,
 }
 
@@ -218,6 +227,7 @@ where
             constructor,
             division_count: Default::default(),
             min_population: Default::default(),
+            is_sorted: true,
             specimens: vec![],
         };
         solver.set_division_count(1);
@@ -286,9 +296,12 @@ where
     pub fn min_population(&self) -> usize {
         self.min_population
     }
-    /// Sort speciments based on cost (best first).
-    fn sort(&mut self) {
-        self.specimens.par_sort_by(S::cmp_cost);
+    /// Ensures that speciments are sorted based on cost (best first).
+    pub fn sort(&mut self) {
+        if !self.is_sorted {
+            self.specimens.par_sort_by(S::cmp_cost);
+            self.is_sorted = true;
+        }
     }
     /// Add certain `count` of (random) specimens based on initial
     /// [`SearchRange`]s.
@@ -296,6 +309,7 @@ where
         self.specimens.reserve(count);
         let search_dists = &self.search_dists;
         let constructor = &self.constructor;
+        self.is_sorted = false;
         self.specimens.par_extend({
             (0..count).into_par_iter().map_init(
                 || rand::thread_rng(),
@@ -305,7 +319,6 @@ where
                 },
             )
         });
-        self.sort();
     }
     /// Evolutionary step.
     ///
@@ -319,6 +332,7 @@ where
     /// Add new specimens based on existing specimens (weighted depending on
     /// fitness).
     pub fn recombine(&mut self, children_count: usize) {
+        self.sort();
         let total_count = self.specimens.len();
         let weights = {
             let total_weight = total_count as f64 * (total_count as f64 + 1.0) / 2.0;
@@ -371,6 +385,7 @@ where
         let search_space = &self.search_space;
         let search_dists = &self.search_dists;
         let constructor = &self.constructor;
+        self.is_sorted = false;
         self.specimens.par_extend({
             (0..children_count).into_par_iter().map_init(
                 || rand::thread_rng(),
@@ -390,10 +405,11 @@ where
                 },
             )
         });
-        self.sort();
     }
-    /// Shrink population of specimens by given `count`.
+    /// Shrink population of specimens by given `count`
+    /// (drops worst fitting specimens).
     pub fn shrink_by(&mut self, count: usize) {
+        self.sort();
         let len = self.specimens.len();
         if count >= len {
             self.specimens.clear();
@@ -401,38 +417,40 @@ where
             self.specimens.truncate(len - count);
         }
     }
-    /// Truncate population of specimens to given `count`.
+    /// Truncate population of specimens to given `count`
+    /// (drops worst fitting specimens).
     pub fn truncate(&mut self, count: usize) {
+        self.sort();
         self.specimens.truncate(count);
     }
     /// Return true if specimens have converged.
-    pub fn converged(&self) -> bool {
+    pub fn converged(&mut self) -> bool {
         let len = self.specimens.len();
         if len == 0 {
             true
         } else {
+            self.sort();
             self.specimens[0].cmp_cost(&self.specimens[len - 1]) == Ordering::Equal
         }
     }
-    /// Population of [`Specimen`]s as shared slice.
+    /// Possibly unsorted population of [`Specimen`]s as shared slice.
+    ///
+    /// It is required to call [`Solver::sort`] first, if a sorted list of
+    /// specimen is desired.
     pub fn specimens(&self) -> &[S] {
         &self.specimens
     }
-    /// Extract population of [`Specimen`]s from `Solver` (leaves empty
-    /// population in place).
-    pub fn take_specimens(&mut self) -> Vec<S> {
-        std::mem::take(&mut self.specimens)
-    }
-    /// Add [`Specimen`]s to population in `Solver`
-    pub fn extend_specimens<T>(&mut self, iter: T)
-    where
-        T: IntoIterator<Item = S>,
-    {
-        self.specimens.extend(iter);
-        self.sort();
+    /// Possibly unsorted population of [`Specimen`]s as mutable [`Vec`]
+    ///
+    /// It is required to call [`Solver::sort`] first, if a sorted list of
+    /// specimen is desired.
+    pub fn specimens_mut(&mut self) -> &mut Vec<S> {
+        self.is_sorted = false;
+        &mut self.specimens
     }
     /// Consume [`Solver`] and return best [`Specimen`].
-    pub fn into_specimen(self) -> S {
+    pub fn into_specimen(mut self) -> S {
+        self.sort();
         self.specimens
             .into_iter()
             .next()
@@ -440,7 +458,8 @@ where
     }
     /// Consume [`Solver`] and return all [`Specimen`]s, ordered by fitness
     /// (best first).
-    pub fn into_specimens(self) -> Vec<S> {
+    pub fn into_specimens(mut self) -> Vec<S> {
+        self.sort();
         self.specimens
     }
 }
