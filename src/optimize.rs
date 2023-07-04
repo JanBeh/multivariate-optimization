@@ -159,20 +159,6 @@ impl Specimen for BasicSpecimen {
     }
 }
 
-/// Create random specimen.
-fn random_specimen<R, S, C>(rng: &mut R, dists: &[SearchDist], mut constructor: C) -> S
-where
-    R: Rng + ?Sized,
-    C: FnMut(Vec<f64>) -> S,
-{
-    constructor(
-        dists
-            .iter()
-            .map(|dist| dist.sample(rng))
-            .collect::<Vec<f64>>(),
-    )
-}
-
 /// Parallel solver for multidimensional problems.
 ///
 /// Usual workflow:
@@ -200,20 +186,23 @@ pub struct Solver<S, C> {
     specimens: Vec<S>,
 }
 
-impl<S, C> Solver<S, C> {
+/// Implementations for synchronous `Solver`.
+impl<S, C> Solver<S, C>
+where
+    S: Specimen + Send + Sync,
+    C: Fn(Vec<f64>) -> S + Sync,
+{
     /// Create `Solver` for search space and [`Specimen`] `constructor` closure.
     ///
     /// The closure takes a [`Vec<f64>`] as argument, which contains the
     /// coefficients/parameters, and it returns an [`S: Specimen`].
-    ///
     /// See [module level documentation] for a code example.
+    ///
+    /// For asynchronous constructors, method [`Solver::new_async`] can be used.
     ///
     /// [`S: Specimen`]: Specimen
     /// [module level documentation]: self
-    pub fn new(search_space: Vec<SearchRange>, constructor: C) -> Self
-    where
-        C: Fn(Vec<f64>) -> S + Sync,
-    {
+    pub fn new(search_space: Vec<SearchRange>, constructor: C) -> Self {
         let search_dists: Vec<SearchDist> = search_space
             .iter()
             .copied()
@@ -231,6 +220,101 @@ impl<S, C> Solver<S, C> {
         solver.set_division_count(1);
         solver
     }
+    /// Add certain `count` of (random) specimens based on initial
+    /// [`SearchRange`]s.
+    pub fn initialize(&mut self, count: usize) {
+        let new_specimens = self.random_specimens(count);
+        self.is_sorted = false;
+        self.specimens.extend(new_specimens);
+    }
+    /// Evolutionary step.
+    ///
+    /// Calculates new specimens based on existing specimens and replaces
+    /// existing specimens if the new ones are better than some of the
+    /// existing ones. In the end, the population size remains the same.
+    pub fn evolution(&mut self, children_count: usize) {
+        self.recombine(children_count);
+        self.shrink_by(children_count);
+    }
+    /// Add new specimens based on existing specimens (weighted depending on
+    /// fitness).
+    pub fn recombine(&mut self, children_count: usize) {
+        let new_specimens = self.recombined_specimens(children_count);
+        self.is_sorted = false;
+        self.specimens.extend(new_specimens);
+    }
+}
+
+/// Implementations for asynchronous `Solver`.
+impl<S, C, F> Solver<S, C>
+where
+    S: Specimen + Send + Sync,
+    C: Fn(Vec<f64>) -> F + Sync,
+    F: Future<Output = S> + Send,
+{
+    /// Same as [`Solver::new`], but takes an asynchronous `constructor`.
+    ///
+    /// Note that when using this method, methods [`initialize_async`],
+    /// [`evolution_async`], and/or [`recombine_async`] must also be used
+    /// instead of their synchronous equivalents.
+    ///
+    /// [`initialize_async`]: Self::initialize_async
+    /// [`evolution_async`]: Self::evolution_async
+    /// [`recombine_async`]: Self::recombine_async
+    pub fn new_async(search_space: Vec<SearchRange>, constructor: C) -> Self {
+        let search_dists: Vec<SearchDist> = search_space
+            .iter()
+            .copied()
+            .map(|search_range| SearchDist::from(search_range))
+            .collect();
+        let mut solver = Solver {
+            search_space,
+            search_dists,
+            constructor,
+            division_count: Default::default(),
+            min_population: Default::default(),
+            is_sorted: true,
+            specimens: vec![],
+        };
+        solver.set_division_count(1);
+        solver
+    }
+    /// Same as [`Solver::initialize`], but asynchronous.
+    pub async fn initialize_async(&mut self, count: usize) {
+        let new_specimens = FuturesOrdered::from_iter(self.random_specimens(count));
+        self.specimens.reserve(count);
+        self.is_sorted = false;
+        new_specimens
+            .for_each(|specimen| {
+                self.specimens.push(specimen);
+                async { () }
+            })
+            .await;
+    }
+    /// Same as [`Solver::evolution`], but asynchronous.
+    pub async fn evolution_async(&mut self, children_count: usize) {
+        self.recombine_async(children_count).await;
+        self.shrink_by(children_count);
+    }
+    /// Same as [`Solver::recombine`], but asynchronous.
+    pub async fn recombine_async(&mut self, children_count: usize) {
+        let new_specimens = FuturesOrdered::from_iter(self.recombined_specimens(children_count));
+        self.specimens.reserve(children_count);
+        self.is_sorted = false;
+        new_specimens
+            .for_each(|specimen| {
+                self.specimens.push(specimen);
+                async { () }
+            })
+            .await;
+    }
+}
+
+/// Implementations for synchronous and asynchronous `Solver`.
+impl<S, C> Solver<S, C>
+where
+    S: Specimen + Send + Sync,
+{
     /// Dimensionality of search space.
     pub fn dim(&self) -> usize {
         self.search_space.len()
@@ -294,77 +378,6 @@ impl<S, C> Solver<S, C> {
     pub fn min_population(&self) -> usize {
         self.min_population
     }
-    /// Create random specimens (optionally async if `T` is a [`Future`]).
-    fn random_specimens<T>(&self, count: usize) -> Vec<T>
-    where
-        T: Send,
-        C: Fn(Vec<f64>) -> T + Sync,
-    {
-        let search_dists = &self.search_dists;
-        let constructor = &self.constructor;
-        (0..count)
-            .into_par_iter()
-            .map_init(
-                || rand::thread_rng(),
-                |rng, _| random_specimen(rng, search_dists, constructor),
-            )
-            .collect()
-    }
-    /// Add certain `count` of (random) specimens based on initial
-    /// [`SearchRange`]s.
-    pub fn initialize(&mut self, count: usize)
-    where
-        S: Send,
-        C: Fn(Vec<f64>) -> S + Sync,
-    {
-        let new_specimens = self.random_specimens(count);
-        self.is_sorted = false;
-        self.specimens.extend(new_specimens);
-    }
-}
-
-impl<S, C, F> Solver<S, C>
-where
-    C: Fn(Vec<f64>) -> F + Sync,
-    F: Future<Output = S> + Send,
-{
-    /// Same as [`Solver::new`], but takes an asynchronous `constructor`.
-    pub fn new_async(search_space: Vec<SearchRange>, constructor: C) -> Self {
-        let search_dists: Vec<SearchDist> = search_space
-            .iter()
-            .copied()
-            .map(|search_range| SearchDist::from(search_range))
-            .collect();
-        let mut solver = Solver {
-            search_space,
-            search_dists,
-            constructor,
-            division_count: Default::default(),
-            min_population: Default::default(),
-            is_sorted: true,
-            specimens: vec![],
-        };
-        solver.set_division_count(1);
-        solver
-    }
-    /// Same as [`Solver::initialize`], but asynchronous.
-    pub async fn initialize_async(&mut self, count: usize) {
-        let new_specimens = FuturesOrdered::from_iter(self.random_specimens(count));
-        self.specimens.reserve(count);
-        self.is_sorted = false;
-        new_specimens
-            .for_each(|specimen| {
-                self.specimens.push(specimen);
-                async { () }
-            })
-            .await;
-    }
-}
-
-impl<S, C> Solver<S, C>
-where
-    S: Specimen + Send,
-{
     /// Ensures that speciments are sorted based on cost (best first).
     pub fn sort(&mut self) {
         if !self.is_sorted {
@@ -427,6 +440,30 @@ where
         self.sort();
         self.specimens
     }
+    /// Create random specimen (optionally async if `T` is a [`Future`]).
+    fn random_specimen<R, T>(&self, rng: &mut R) -> T
+    where
+        R: Rng + ?Sized,
+        C: Fn(Vec<f64>) -> T,
+    {
+        (self.constructor)(
+            self.search_dists
+                .iter()
+                .map(|dist| dist.sample(rng))
+                .collect::<Vec<f64>>(),
+        )
+    }
+    /// Create random specimens (optionally async if `T` is a [`Future`]).
+    fn random_specimens<T>(&self, count: usize) -> Vec<T>
+    where
+        T: Send,
+        C: Fn(Vec<f64>) -> T + Sync,
+    {
+        (0..count)
+            .into_par_iter()
+            .map_init(|| rand::thread_rng(), |rng, _| self.random_specimen(rng))
+            .collect()
+    }
     /// Create recombined specimens (optionally async if `T` is a [`Future`]).
     ///
     /// This private method is used by [`Solver::recombine`] and
@@ -487,9 +524,6 @@ where
             })
             .collect::<Vec<_>>(); // TODO: use boxed slice when supported by rayon
         self.specimens.reserve(children_count);
-        let search_space = &self.search_space;
-        let search_dists = &self.search_dists;
-        let constructor = &self.constructor;
         (0..children_count)
             .into_par_iter()
             .map_init(
@@ -499,64 +533,16 @@ where
                         sub_dists.iter().map(|dist| dist.sample(rng).into_iter());
                     let params: Vec<_> = conqueror.merge(param_groups_iter).collect();
                     for (i, param) in params.iter().enumerate() {
-                        if let SearchRange::Finite { low, high } = search_space[i] {
+                        if let SearchRange::Finite { low, high } = self.search_space[i] {
                             if !(low..=high).contains(param) {
-                                return random_specimen(rng, search_dists, constructor);
+                                return self.random_specimen(rng);
                             }
                         }
                     }
-                    constructor(params)
+                    (self.constructor)(params)
                 },
             )
             .collect()
-    }
-}
-
-impl<S, C> Solver<S, C>
-where
-    S: Specimen + Send + Sync,
-    C: Fn(Vec<f64>) -> S + Sync,
-{
-    /// Evolutionary step.
-    ///
-    /// Calculates new specimens based on existing specimens and replaces
-    /// existing specimens if the new ones are better than some of the
-    /// existing ones. In the end, the population size remains the same.
-    pub fn evolution(&mut self, children_count: usize) {
-        self.recombine(children_count);
-        self.shrink_by(children_count);
-    }
-    /// Add new specimens based on existing specimens (weighted depending on
-    /// fitness).
-    pub fn recombine(&mut self, children_count: usize) {
-        let new_specimens = self.recombined_specimens(children_count);
-        self.is_sorted = false;
-        self.specimens.extend(new_specimens);
-    }
-}
-
-impl<S, C, F> Solver<S, C>
-where
-    S: Specimen + Send + Sync,
-    C: Fn(Vec<f64>) -> F + Sync,
-    F: Future<Output = S> + Send,
-{
-    /// Same as [`Solver::evolution`], but asynchronous.
-    pub async fn evolution_async(&mut self, children_count: usize) {
-        self.recombine_async(children_count).await;
-        self.shrink_by(children_count);
-    }
-    /// Same as [`Solver::recombine`], but asynchronous.
-    pub async fn recombine_async(&mut self, children_count: usize) {
-        let new_specimens = FuturesOrdered::from_iter(self.recombined_specimens(children_count));
-        self.specimens.reserve(children_count);
-        self.is_sorted = false;
-        new_specimens
-            .for_each(|specimen| {
-                self.specimens.push(specimen);
-                async { () }
-            })
-            .await;
     }
 }
 
