@@ -26,13 +26,13 @@
 //!
 //! solver.initialize(POPULATION);
 //! for iter in 0..MAX_ITERATIONS {
-//!     println!("{} {}", solver.specimens[0].cost, solver.specimens.last().unwrap().cost);
+//!     println!("{} {}", solver.specimens()[0].cost, solver.specimens().last().unwrap().cost);
 //!     if solver.converged() {
 //!         break;
 //!     }
 //!     solver.evolution(POPULATION);
 //! }
-//! assert_eq!(solver.specimens[0].cost, 0.0);
+//! assert_eq!(solver.specimens()[0].cost, 0.0);
 //! ```
 //!
 //! See also [`Solver`].
@@ -189,8 +189,7 @@ pub struct Solver<S, C> {
     constructor: C,
     division_count: usize,
     min_population: usize,
-    /// Current population of [`Specimen`]s (best sorted first)
-    pub specimens: Vec<S>,
+    specimens: Vec<S>,
 }
 
 impl<S, C> Solver<S, C>
@@ -415,12 +414,34 @@ where
             self.specimens[0].cmp_cost(&self.specimens[len - 1]) == Ordering::Equal
         }
     }
+    /// Population of [`Specimen`]s as shared slice.
+    pub fn specimens(&self) -> &[S] {
+        &self.specimens
+    }
+    /// Extract population of [`Specimen`]s from `Solver` (leaves empty
+    /// population in place).
+    pub fn take_specimens(&mut self) -> Vec<S> {
+        std::mem::take(&mut self.specimens)
+    }
+    /// Add [`Specimen`]s to population in `Solver`
+    pub fn extend_specimens<T>(&mut self, iter: T)
+    where
+        T: IntoIterator<Item = S>,
+    {
+        self.specimens.extend(iter);
+        self.sort();
+    }
     /// Consume [`Solver`] and return best [`Specimen`].
     pub fn into_specimen(self) -> S {
         self.specimens
             .into_iter()
             .next()
             .expect("solver contains no specimen")
+    }
+    /// Consume [`Solver`] and return all [`Specimen`]s, ordered by fitness
+    /// (best first).
+    pub fn into_specimens(self) -> Vec<S> {
+        self.specimens
     }
 }
 
