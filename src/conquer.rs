@@ -1,10 +1,11 @@
-//! Randomly assign indices to a fixed number of groups (to split work into smaller parts)
+//! Randomly assign indices to a fixed number of groups (to split work into
+//! smaller parts).
 
 use rand::{seq::SliceRandom, Rng};
 
 use std::ops::Deref;
 
-/// Memorizes random assignment of indices to groups
+/// Memorizes random assignment of indices to groups.
 #[derive(Debug)]
 pub struct Conqueror {
     assignments: Box<[usize]>,
@@ -12,7 +13,7 @@ pub struct Conqueror {
 }
 
 impl Conqueror {
-    /// Randomly assign indices to fixed number of groups
+    /// Randomly assign indices to fixed number of groups.
     ///
     /// Create a `Conqueror` struct, by randomly assigning indices (from
     /// `0..source_len`) to a fixed number of groups (`group_count`).
@@ -46,15 +47,15 @@ impl Conqueror {
             groups,
         }
     }
-    /// Return slice containing index of assigned group for each original index
+    /// Return slice containing index of assigned group for each original index.
     pub fn assignments(&self) -> &[usize] {
         &self.assignments
     }
-    /// Return slice containing indices of created groups
+    /// Return slice containing indices of created groups.
     pub fn groups(&self) -> &[impl Deref<Target = [usize]>] {
         &self.groups
     }
-    /// Merge iterators returning results for each group to a single iterator
+    /// Merge iterators returning results for each group to a single iterator.
     pub fn merge<'a, T, I, R>(&'a self, results: R) -> impl 'a + Iterator<Item = T>
     where
         I: Iterator<Item = T> + 'a,

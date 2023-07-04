@@ -1,4 +1,4 @@
-//! Multivariate optimization (through estimation of distribution)
+//! Multivariate optimization (through estimation of distribution).
 //!
 //! # Example
 //!
@@ -48,25 +48,25 @@ use rayon::prelude::*;
 use std::cmp::Ordering;
 use std::ops::RangeInclusive;
 
-/// Search range for a single dimension
+/// Search range for a single dimension.
 ///
 /// `SearchRange` describes a search range for a single dimension and
 /// `Vec<SearchRange>` describes a multidimensional search space (which can be
 /// passed to [`Solver::new`]).
 #[derive(Copy, Clone, Debug)]
 pub enum SearchRange {
-    /// Finite search range
+    /// Finite search range.
     Finite {
-        /// Lower bound
+        /// Lower bound.
         low: f64,
-        /// Upper bound
+        /// Upper bound.
         high: f64,
     },
-    /// Infinite search range
+    /// Infinite search range.
     Infinite {
-        /// Initial average value for starting search
+        /// Initial average value for starting search.
         average: f64,
-        /// Initial standard deviation for starting search
+        /// Initial standard deviation for starting search.
         stddev: f64,
     },
 }
@@ -80,7 +80,7 @@ impl From<RangeInclusive<f64>> for SearchRange {
     }
 }
 
-/// Enum with one-dimensional distribution used for initial search
+/// Enum with one-dimensional distribution used for initial search.
 #[derive(Clone, Debug)]
 enum SearchDist {
     Finite(Uniform<f64>),
@@ -88,7 +88,7 @@ enum SearchDist {
 }
 
 impl From<SearchRange> for SearchDist {
-    /// Create one-dimensional distribution for given SearchRange
+    /// Create one-dimensional distribution for given SearchRange.
     fn from(search_range: SearchRange) -> SearchDist {
         match search_range {
             SearchRange::Finite { low, high } => {
@@ -110,7 +110,7 @@ impl Distribution<f64> for SearchDist {
     }
 }
 
-/// Specimen in evolutionary process
+/// Specimen in evolutionary process.
 ///
 /// Two methods are required to be implemented:
 /// * The [`params`](Specimen::params) method needs to return the parameters
@@ -122,15 +122,15 @@ impl Distribution<f64> for SearchDist {
 /// For most cases, the module provides a [`BasicSpecimen`] which is an
 /// implementation only storing the `params` and `cost` values.
 pub trait Specimen {
-    /// Parameters used for creation
+    /// Parameters used for creation.
     fn params(&self) -> &[f64];
-    /// Compare specimen's fitness ([`Less`] means better)
+    /// Compare specimen's fitness ([`Less`] means better).
     ///
     /// [`Less`]: Ordering::Less
     fn cmp_cost(&self, other: &Self) -> Ordering;
 }
 
-/// Most simple implementation of a [`Specimen`]
+/// Most simple implementation of a [`Specimen`].
 #[derive(Clone, Debug)]
 pub struct BasicSpecimen {
     /// Coefficients used to create specimen
@@ -151,7 +151,7 @@ impl Specimen for BasicSpecimen {
     }
 }
 
-/// Create random specimen
+/// Create random specimen.
 fn random_specimen<R, S, C>(rng: &mut R, dists: &[SearchDist], constructor: C) -> S
 where
     R: Rng + ?Sized,
@@ -166,7 +166,7 @@ where
     )
 }
 
-/// Parallel solver for multidimensional problems
+/// Parallel solver for multidimensional problems.
 ///
 /// Usual workflow:
 ///
@@ -198,7 +198,7 @@ where
     S: Specimen + Send + Sync,
     C: Fn(Vec<f64>) -> S + Sync,
 {
-    /// Create `Solver` for search space and [`Specimen`] `constructor` closure
+    /// Create `Solver` for search space and [`Specimen`] `constructor` closure.
     ///
     /// The closure takes a [`Vec<f64>`] as argument, which contains the
     /// coefficients/parameters, and it returns an [`S: Specimen`].
@@ -224,12 +224,12 @@ where
         solver.set_division_count(1);
         solver
     }
-    /// Dimensionality of search space
+    /// Dimensionality of search space.
     pub fn dim(&self) -> usize {
         self.search_space.len()
     }
     /// Simplify calculation by dividing dimensions into a given number of
-    /// groups
+    /// groups.
     ///
     /// Divides dimensions into (almost) equally sized groups when calculating
     /// covariances to reduce computation time. The number of groups is given
@@ -246,7 +246,7 @@ where
         self.division_count = division_count;
         self.min_population = (self.dim() - 1) / division_count + 1;
     }
-    /// Simplify calculation by dividing dimensions according to speed factor
+    /// Simplify calculation by dividing dimensions according to speed factor.
     ///
     /// This method is a high-level interface for
     /// [`Solver::set_division_count`].
@@ -266,7 +266,7 @@ where
         self.set_division_count((self.dim() as f64).powf(speed_factor).round() as usize);
     }
     /// Simply calculation by dividing dimensions into groups of specified
-    /// maximum size
+    /// maximum size.
     ///
     /// This method is an alternative interface for
     /// [`Solver::set_division_count`] where the maximum size of each division
@@ -276,23 +276,23 @@ where
         self.set_division_count((self.dim() as f64 / max_division_size as f64).ceil() as usize);
     }
     /// Number of groups into which dimensions are split when calculating
-    /// covariances
+    /// covariances.
     pub fn division_count(&self) -> usize {
         self.division_count
     }
-    /// Minimum required population
+    /// Minimum required population.
     ///
     /// The number depends on the number of dimensions and the number of groups
     /// into which the dimensions are split when calculating covariances.
     pub fn min_population(&self) -> usize {
         self.min_population
     }
-    /// Sort speciments based on cost (best first)
+    /// Sort speciments based on cost (best first).
     fn sort(&mut self) {
         self.specimens.par_sort_by(S::cmp_cost);
     }
     /// Add certain `count` of (random) specimens based on initial
-    /// [`SearchRange`]s
+    /// [`SearchRange`]s.
     pub fn initialize(&mut self, count: usize) {
         self.specimens.reserve(count);
         let search_dists = &self.search_dists;
@@ -308,7 +308,7 @@ where
         });
         self.sort();
     }
-    /// Evolutionary step
+    /// Evolutionary step.
     ///
     /// Calculates new specimens based on existing specimens and replaces
     /// existing specimens if the new ones are better than some of the
@@ -318,7 +318,7 @@ where
         self.shrink_by(children_count);
     }
     /// Add new specimens based on existing specimens (weighted depending on
-    /// fitness)
+    /// fitness).
     pub fn recombine(&mut self, children_count: usize) {
         let total_count = self.specimens.len();
         let weights = {
@@ -393,7 +393,7 @@ where
         });
         self.sort();
     }
-    /// Shrink population of specimens by given `count`
+    /// Shrink population of specimens by given `count`.
     pub fn shrink_by(&mut self, count: usize) {
         let len = self.specimens.len();
         if count >= len {
@@ -402,11 +402,11 @@ where
             self.specimens.truncate(len - count);
         }
     }
-    /// Truncate population of specimens to given `count`
+    /// Truncate population of specimens to given `count`.
     pub fn truncate(&mut self, count: usize) {
         self.specimens.truncate(count);
     }
-    /// Return true if specimens have converged
+    /// Return true if specimens have converged.
     pub fn converged(&self) -> bool {
         let len = self.specimens.len();
         if len == 0 {
@@ -415,7 +415,7 @@ where
             self.specimens[0].cmp_cost(&self.specimens[len - 1]) == Ordering::Equal
         }
     }
-    /// Consume [`Solver`] and return best [`Specimen`]
+    /// Consume [`Solver`] and return best [`Specimen`].
     pub fn into_specimen(self) -> S {
         self.specimens
             .into_iter()

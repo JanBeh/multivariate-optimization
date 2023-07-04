@@ -1,6 +1,6 @@
-//! Test problems for optimization algorithms
+//! Test problems for optimization algorithms.
 
-/// Rastrigin function
+/// Rastrigin function.
 ///
 /// Typically used from `-5.12..=5.12`. Minimum is at `0.0`.
 pub fn rastrigin(args: &[f64]) -> f64 {
@@ -15,7 +15,7 @@ pub fn rastrigin(args: &[f64]) -> f64 {
             .sum::<f64>()
 }
 
-/// Sum of Rosenbrock functions
+/// Sum of Rosenbrock functions.
 ///
 /// Multidimensional generalization of Rosenbrock function.
 /// If `args.len() % 2 == 1`, then the last argument is ignored.

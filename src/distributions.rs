@@ -1,4 +1,4 @@
-//! Univariate and multivariate probability distributions
+//! Univariate and multivariate probability distributions.
 
 pub use crate::triangular::Triangular;
 
@@ -8,13 +8,13 @@ use rand::{
     Rng,
 };
 
-/// Numbers supported by generic items of this module
+/// Numbers supported by generic items of this module.
 pub trait Num
 where
     Self: Float + FloatConst + NumCast + NumAssignOps,
     Self: SampleUniform,
 {
-    /// Generate number between zero (exclusive) and one (inclusive)
+    /// Generate number between zero (exclusive) and one (inclusive).
     ///
     /// This method is needed due to Rust issue [#20671]:
     /// it avoids having to add `OpenClosed01: Distribution<T>` bounds.
@@ -34,13 +34,13 @@ where
     }
 }
 
-/// Multivariate distribution
+/// Multivariate distribution.
 pub trait MultivarDist<T>: Distribution<Vec<T>> {
     /// Dimensionality
     fn dim(&self) -> usize;
 }
 
-/// Univariate standard normal distribtion
+/// Univariate standard normal distribtion.
 #[derive(Clone, Copy, Default, Debug)]
 pub struct StdNormDist;
 
@@ -53,7 +53,7 @@ impl<T: Num> Distribution<T> for StdNormDist {
     }
 }
 
-/// Univariate standard normal distribtion with pairwise output
+/// Univariate standard normal distribtion with pairwise output.
 #[derive(Clone, Copy, Default, Debug)]
 pub struct StdNormDistPair;
 
@@ -73,10 +73,10 @@ impl<T: Num> Distribution<(T, T)> for StdNormDistPair {
     }
 }
 
-/// Univariate standard normal distribtion with variable length output
+/// Univariate standard normal distribtion with variable length output.
 #[derive(Clone, Copy, Default, Debug)]
 pub struct StdNormDistVec(
-    /// Number of elements in [`Vec`] sample
+    /// Number of elements in [`Vec`] sample.
     pub usize,
 );
 
@@ -97,17 +97,17 @@ impl<T: Num> Distribution<Vec<T>> for StdNormDistVec {
 }
 
 /// Univariate (non-standard) normal distribtion with given average and
-/// standard deviation
+/// standard deviation.
 #[derive(Clone, Debug)]
 pub struct NormDist<T> {
-    /// Average of created samples
+    /// Average of created samples.
     pub average: T,
-    /// Standard deviation of created samples
+    /// Standard deviation of created samples.
     pub stddev: T,
 }
 
 impl<T> NormDist<T> {
-    /// Create distribution with given average and standard deviation
+    /// Create distribution with given average and standard deviation.
     pub const fn new(average: T, stddev: T) -> NormDist<T> {
         NormDist { average, stddev }
     }
@@ -121,7 +121,7 @@ impl<T: Num> Distribution<T> for NormDist<T> {
 }
 
 /// Multivariate normal distribution for given
-/// average vectors and covariance matrices
+/// average vectors and covariance matrices.
 ///
 /// # Example
 ///
@@ -150,7 +150,7 @@ pub struct MultivarNormDist<T> {
 
 impl<T: Num> MultivarNormDist<T> {
     /// Create multivariate normal distribution for given averages and
-    /// covariances
+    /// covariances.
     pub fn new(averages: Vec<T>, covariances: Triangular<T>) -> MultivarNormDist<T> {
         let dim = covariances.dim();
         assert_eq!(

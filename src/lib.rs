@@ -1,4 +1,4 @@
-//! Multivariate optimization
+//! Multivariate optimization.
 //!
 //! See module [`optimize`] for multivariate optimization.
 //! The other modules are (public) helper modules.

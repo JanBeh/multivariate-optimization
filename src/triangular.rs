@@ -1,30 +1,30 @@
-//! Triangular numbers and matrices
+//! Triangular numbers and matrices.
 
 use rayon::prelude::*;
 
-/// Calculates a triangular number, where `trinum(x) == x*(x+1)/2`
+/// Calculates a triangular number, where `trinum(x) == x*(x+1)/2`.
 pub fn trinum(x: usize) -> usize {
     x * (x + 1) / 2
 }
 
-/// Same as [`trinum`], but returns [`None`] if calculation would overflow
+/// Same as [`trinum`], but returns [`None`] if calculation would overflow.
 pub fn checked_trinum(x: usize) -> Option<usize> {
     x.checked_add(1)
         .and_then(|t| t.checked_mul(x))
         .map(|t| t / 2)
 }
 
-/// Triangular matrix
+/// Triangular matrix.
 #[derive(Clone, Debug)]
 pub struct Triangular<T> {
-    /// Number of both rows and columns
+    /// Number of both rows and columns.
     dim: usize,
-    /// Elements as linear slice
+    /// Elements as linear slice.
     linear: Box<[T]>,
 }
 
 impl<T> Triangular<T> {
-    /// Create triangular matrix with given dimension
+    /// Create triangular matrix with given dimension.
     ///
     /// Fills initial elements by calling `contents` with `(i, j)` as argument,
     /// where `i < dim && j <= i`.
@@ -41,7 +41,7 @@ impl<T> Triangular<T> {
         let linear = linear.into_boxed_slice();
         Triangular { dim, linear }
     }
-    /// Same as [`Triangular::new`], but execute in parallel
+    /// Same as [`Triangular::new`], but execute in parallel.
     pub fn par_new<F>(dim: usize, contents: F) -> Triangular<T>
     where
         F: Sync + Fn((usize, usize)) -> T,
@@ -59,7 +59,7 @@ impl<T> Triangular<T> {
             .into_boxed_slice(); // TODO: directly collect into boxed slice, if possible
         Triangular { dim, linear }
     }
-    /// Number of both rows and columns
+    /// Number of both rows and columns.
     pub fn dim(&self) -> usize {
         self.dim
     }
@@ -75,7 +75,7 @@ impl<T> Triangular<T> {
         }
         Ok(self.linear_index((row, col)))
     }
-    /// Immutable unchecked indexing through `(i, j)`, where `j <= i < dim()`
+    /// Immutable unchecked indexing through `(i, j)`, where `j <= i < dim()`.
     ///
     /// # Safety
     ///
@@ -86,7 +86,7 @@ impl<T> Triangular<T> {
         // SAFETY: `row` and `col` are valid
         unsafe { self.linear.get_unchecked(idx) }
     }
-    /// Mutable unchecked indexing through `(i, j)`, where `j <= i < dim()`
+    /// Mutable unchecked indexing through `(i, j)`, where `j <= i < dim()`.
     ///
     /// # Safety
     ///
@@ -99,7 +99,7 @@ impl<T> Triangular<T> {
     }
 }
 
-/// Immutable indexing through `(i, j)`, where `j <= i < dim()`
+/// Immutable indexing through `(i, j)`, where `j <= i < dim()`.
 impl<T> std::ops::Index<(usize, usize)> for Triangular<T> {
     type Output = T;
     fn index(&self, (row, col): (usize, usize)) -> &T {
@@ -112,7 +112,7 @@ impl<T> std::ops::Index<(usize, usize)> for Triangular<T> {
     }
 }
 
-/// Mutable indexing through `(i, j)`, where `j <= i < dim()`
+/// Mutable indexing through `(i, j)`, where `j <= i < dim()`.
 impl<T> std::ops::IndexMut<(usize, usize)> for Triangular<T> {
     fn index_mut(&mut self, (row, col): (usize, usize)) -> &mut T {
         let idx = match self.checked_linear_index((row, col)) {
