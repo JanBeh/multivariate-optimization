@@ -46,6 +46,10 @@ impl Conqueror {
             groups,
         }
     }
+    /// Return slice containing index of assigned group for each original index
+    pub fn assignments(&self) -> &[usize] {
+        &self.assignments
+    }
     /// Return slice containing indices of created groups
     pub fn groups(&self) -> &[impl Deref<Target = [usize]>] {
         &self.groups
