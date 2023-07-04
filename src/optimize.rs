@@ -32,10 +32,10 @@
 //!
 //! solver.initialize(POPULATION);
 //! for iter in 0..MAX_ITERATIONS {
-//!     if solver.specimens[0].cost == solver.specimens.last().unwrap().cost {
+//!     println!("{} {}", solver.specimens[0].cost, solver.specimens.last().unwrap().cost);
+//!     if solver.converged() {
 //!         break;
 //!     }
-//!     println!("{} {}", solver.specimens[0].cost, solver.specimens.last().unwrap().cost);
 //!     solver.evolution(POPULATION);
 //! }
 //! assert_eq!(solver.specimens[0].cost, 0.0);
@@ -400,9 +400,21 @@ where
     pub fn truncate(&mut self, count: usize) {
         self.specimens.truncate(count);
     }
+    /// Return true if specimens have converged
+    pub fn converged(&self) -> bool {
+        let len = self.specimens.len();
+        if len == 0 {
+            true
+        } else {
+            self.specimens[0].cmp_cost(&self.specimens[len - 1]) == Ordering::Equal
+        }
+    }
     /// Consume [`Solver`] and return best [`Specimen`]
     pub fn into_specimen(self) -> S {
-        self.specimens.into_iter().next().expect("solver contains no specimen")
+        self.specimens
+            .into_iter()
+            .next()
+            .expect("solver contains no specimen")
     }
 }
 
