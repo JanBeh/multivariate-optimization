@@ -18,7 +18,7 @@
 //!
 //! const POPULATION: usize = 1000;
 //! const MAX_ITERATIONS: usize = 1000;
-//! let mut solver = Solver::new(search_space, |params| {
+//! let mut solver = Solver::new(search_space, |params: Vec<f64>| {
 //!     let cost = rastrigin(&params);
 //!     BasicSpecimen { params, cost }
 //! });
@@ -47,11 +47,13 @@ use crate::conquer::Conqueror;
 use crate::distributions::{MultivarNormDist, NormDist};
 use crate::triangular::Triangular;
 
+use futures::stream::{FuturesOrdered, StreamExt};
 use rand::distributions::{Distribution, Uniform};
 use rand::Rng;
 use rayon::prelude::*;
 
 use std::cmp::Ordering;
+use std::future::Future;
 use std::ops::RangeInclusive;
 
 /// Search range for a single dimension.
@@ -158,11 +160,10 @@ impl Specimen for BasicSpecimen {
 }
 
 /// Create random specimen.
-fn random_specimen<R, S, C>(rng: &mut R, dists: &[SearchDist], constructor: C) -> S
+fn random_specimen<R, S, C>(rng: &mut R, dists: &[SearchDist], mut constructor: C) -> S
 where
     R: Rng + ?Sized,
-    S: Specimen,
-    C: Fn(Vec<f64>) -> S,
+    C: FnMut(Vec<f64>) -> S,
 {
     constructor(
         dists
@@ -199,11 +200,7 @@ pub struct Solver<S, C> {
     specimens: Vec<S>,
 }
 
-impl<S, C> Solver<S, C>
-where
-    S: Specimen + Send + Sync,
-    C: Fn(Vec<f64>) -> S + Sync,
-{
+impl<S, C> Solver<S, C> {
     /// Create `Solver` for search space and [`Specimen`] `constructor` closure.
     ///
     /// The closure takes a [`Vec<f64>`] as argument, which contains the
@@ -294,115 +291,64 @@ where
     pub fn min_population(&self) -> usize {
         self.min_population
     }
+    /// Create random specimens (optionally async if `T` is a [`Future`]).
+    fn random_specimens<T>(&self, count: usize) -> Vec<T>
+    where
+        T: Send,
+        C: Fn(Vec<f64>) -> T + Sync,
+    {
+        let search_dists = &self.search_dists;
+        let constructor = &self.constructor;
+        (0..count)
+            .into_par_iter()
+            .map_init(
+                || rand::thread_rng(),
+                |rng, _| random_specimen(rng, search_dists, constructor),
+            )
+            .collect()
+    }
+    /// Add certain `count` of (random) specimens based on initial
+    /// [`SearchRange`]s.
+    pub fn initialize(&mut self, count: usize)
+    where
+        S: Send,
+        C: Fn(Vec<f64>) -> S + Sync,
+    {
+        let new_specimens = self.random_specimens(count);
+        self.is_sorted = false;
+        self.specimens.extend(new_specimens);
+    }
+}
+
+impl<S, C, F> Solver<S, C>
+where
+    C: Fn(Vec<f64>) -> F + Sync,
+    F: Future<Output = S> + Send,
+{
+    /// Same as [`Solver::initialize`], but asynchronous.
+    pub async fn initialize_async(&mut self, count: usize) {
+        let new_specimens = FuturesOrdered::from_iter(self.random_specimens(count));
+        self.specimens.reserve(count);
+        self.is_sorted = false;
+        new_specimens
+            .for_each(|specimen| {
+                self.specimens.push(specimen);
+                async { () }
+            })
+            .await;
+    }
+}
+
+impl<S, C> Solver<S, C>
+where
+    S: Specimen + Send,
+{
     /// Ensures that speciments are sorted based on cost (best first).
     pub fn sort(&mut self) {
         if !self.is_sorted {
             self.specimens.par_sort_by(S::cmp_cost);
             self.is_sorted = true;
         }
-    }
-    /// Add certain `count` of (random) specimens based on initial
-    /// [`SearchRange`]s.
-    pub fn initialize(&mut self, count: usize) {
-        self.specimens.reserve(count);
-        let search_dists = &self.search_dists;
-        let constructor = &self.constructor;
-        self.is_sorted = false;
-        self.specimens.par_extend({
-            (0..count).into_par_iter().map_init(
-                || rand::thread_rng(),
-                |rng, _| {
-                    let specimen: S = random_specimen(rng, search_dists, constructor);
-                    specimen
-                },
-            )
-        });
-    }
-    /// Evolutionary step.
-    ///
-    /// Calculates new specimens based on existing specimens and replaces
-    /// existing specimens if the new ones are better than some of the
-    /// existing ones. In the end, the population size remains the same.
-    pub fn evolution(&mut self, children_count: usize) {
-        self.recombine(children_count);
-        self.shrink_by(children_count);
-    }
-    /// Add new specimens based on existing specimens (weighted depending on
-    /// fitness).
-    pub fn recombine(&mut self, children_count: usize) {
-        self.sort();
-        let total_count = self.specimens.len();
-        let weights = {
-            let total_weight = total_count as f64 * (total_count as f64 + 1.0) / 2.0;
-            (1..=total_count)
-                .into_iter()
-                .rev()
-                .map(|n| n as f64 / total_weight)
-                .collect::<Box<[_]>>()
-        };
-        let conqueror = Conqueror::new(&mut rand::thread_rng(), self.dim(), self.division_count());
-        let sub_averages = conqueror
-            .groups()
-            .par_iter()
-            .map(|group| {
-                (0..group.len())
-                    .into_par_iter()
-                    .map(|i| {
-                        let i_orig = group[i];
-                        self.specimens
-                            .par_iter()
-                            .zip(weights.par_iter().copied())
-                            .map(|(specimen, weight)| weight * specimen.params()[i_orig])
-                            .sum::<f64>()
-                    })
-                    .collect::<Vec<_>>() // TODO: use boxed slice when supported by rayon
-            })
-            .collect::<Vec<_>>(); // TODO: use boxed slice when supported by rayon
-        let sub_dists: Vec<_> = conqueror
-            .groups()
-            .par_iter()
-            .zip(sub_averages.into_par_iter())
-            .map(|(group, averages)| {
-                let covariances = Triangular::<f64>::par_new(group.len(), |(i, j)| {
-                    let i_orig = group[i];
-                    let j_orig = group[j];
-                    self.specimens
-                        .iter()
-                        .zip(weights.iter().copied())
-                        .map(|(specimen, weight)| {
-                            let a = specimen.params()[i_orig] - averages[i];
-                            let b = specimen.params()[j_orig] - averages[j];
-                            weight * (a * b)
-                        })
-                        .sum::<f64>()
-                });
-                MultivarNormDist::new(averages, covariances)
-            })
-            .collect::<Vec<_>>(); // TODO: use boxed slice when supported by rayon
-        self.specimens.reserve(children_count);
-        let search_space = &self.search_space;
-        let search_dists = &self.search_dists;
-        let constructor = &self.constructor;
-        self.is_sorted = false;
-        self.specimens.par_extend({
-            (0..children_count).into_par_iter().map_init(
-                || rand::thread_rng(),
-                |rng, _| {
-                    let param_groups_iter =
-                        sub_dists.iter().map(|dist| dist.sample(rng).into_iter());
-                    let params: Vec<_> = conqueror.merge(param_groups_iter).collect();
-                    for (i, param) in params.iter().enumerate() {
-                        if let SearchRange::Finite { low, high } = search_space[i] {
-                            if !(low..=high).contains(param) {
-                                let specimen: S = random_specimen(rng, search_dists, constructor);
-                                return specimen;
-                            }
-                        }
-                    }
-                    constructor(params)
-                },
-            )
-        });
     }
     /// Shrink population of specimens by given `count`
     /// (drops worst fitting specimens).
@@ -459,6 +405,137 @@ where
         self.sort();
         self.specimens
     }
+    /// Create recombined specimens (optionally async if `T` is a [`Future`]).
+    ///
+    /// This private method is used by [`Solver::recombine`] and
+    /// [`Solver::recombine_async`].
+    fn recombined_specimens<T>(&mut self, children_count: usize) -> Vec<T>
+    where
+        T: Send,
+        S: Sync,
+        C: Fn(Vec<f64>) -> T + Sync,
+    {
+        self.sort();
+        let total_count = self.specimens.len();
+        let weights = {
+            let total_weight = total_count as f64 * (total_count as f64 + 1.0) / 2.0;
+            (1..=total_count)
+                .into_iter()
+                .rev()
+                .map(|n| n as f64 / total_weight)
+                .collect::<Box<[_]>>()
+        };
+        let conqueror = Conqueror::new(&mut rand::thread_rng(), self.dim(), self.division_count());
+        let sub_averages = conqueror
+            .groups()
+            .par_iter()
+            .map(|group| {
+                (0..group.len())
+                    .into_par_iter()
+                    .map(|i| {
+                        let i_orig = group[i];
+                        self.specimens
+                            .par_iter()
+                            .zip(weights.par_iter().copied())
+                            .map(|(specimen, weight)| weight * specimen.params()[i_orig])
+                            .sum::<f64>()
+                    })
+                    .collect::<Vec<_>>() // TODO: use boxed slice when supported by rayon
+            })
+            .collect::<Vec<_>>(); // TODO: use boxed slice when supported by rayon
+        let sub_dists: Vec<_> = conqueror
+            .groups()
+            .par_iter()
+            .zip(sub_averages.into_par_iter())
+            .map(|(group, averages)| {
+                let covariances = Triangular::<f64>::par_new(group.len(), |(i, j)| {
+                    let i_orig = group[i];
+                    let j_orig = group[j];
+                    self.specimens
+                        .iter()
+                        .zip(weights.iter().copied())
+                        .map(|(specimen, weight)| {
+                            let a = specimen.params()[i_orig] - averages[i];
+                            let b = specimen.params()[j_orig] - averages[j];
+                            weight * (a * b)
+                        })
+                        .sum::<f64>()
+                });
+                MultivarNormDist::new(averages, covariances)
+            })
+            .collect::<Vec<_>>(); // TODO: use boxed slice when supported by rayon
+        self.specimens.reserve(children_count);
+        let search_space = &self.search_space;
+        let search_dists = &self.search_dists;
+        let constructor = &self.constructor;
+        (0..children_count)
+            .into_par_iter()
+            .map_init(
+                || rand::thread_rng(),
+                |rng, _| {
+                    let param_groups_iter =
+                        sub_dists.iter().map(|dist| dist.sample(rng).into_iter());
+                    let params: Vec<_> = conqueror.merge(param_groups_iter).collect();
+                    for (i, param) in params.iter().enumerate() {
+                        if let SearchRange::Finite { low, high } = search_space[i] {
+                            if !(low..=high).contains(param) {
+                                return random_specimen(rng, search_dists, constructor);
+                            }
+                        }
+                    }
+                    constructor(params)
+                },
+            )
+            .collect()
+    }
+}
+
+impl<S, C> Solver<S, C>
+where
+    S: Specimen + Send + Sync,
+    C: Fn(Vec<f64>) -> S + Sync,
+{
+    /// Evolutionary step.
+    ///
+    /// Calculates new specimens based on existing specimens and replaces
+    /// existing specimens if the new ones are better than some of the
+    /// existing ones. In the end, the population size remains the same.
+    pub fn evolution(&mut self, children_count: usize) {
+        self.recombine(children_count);
+        self.shrink_by(children_count);
+    }
+    /// Add new specimens based on existing specimens (weighted depending on
+    /// fitness).
+    pub fn recombine(&mut self, children_count: usize) {
+        let new_specimens = self.recombined_specimens(children_count);
+        self.is_sorted = false;
+        self.specimens.extend(new_specimens);
+    }
+}
+
+impl<S, C, F> Solver<S, C>
+where
+    S: Specimen + Send + Sync,
+    C: Fn(Vec<f64>) -> F + Sync,
+    F: Future<Output = S> + Send,
+{
+    /// Same as [`Solver::evolution`], but asynchronous.
+    pub async fn evolution_async(&mut self, children_count: usize) {
+        self.recombine_async(children_count).await;
+        self.shrink_by(children_count);
+    }
+    /// Same as [`Solver::recombine`], but asynchronous.
+    pub async fn recombine_async(&mut self, children_count: usize) {
+        let new_specimens = FuturesOrdered::from_iter(self.recombined_specimens(children_count));
+        self.specimens.reserve(children_count);
+        self.is_sorted = false;
+        new_specimens
+            .for_each(|specimen| {
+                self.specimens.push(specimen);
+                async { () }
+            })
+            .await;
+    }
 }
 
 #[cfg(test)]
@@ -476,7 +553,7 @@ mod tests {
             .cloned()
             .map(|range| rng.gen_range(range))
             .collect();
-        let mut solver = Solver::new(search_space, |params| {
+        let mut solver = Solver::new(search_space, |params: Vec<f64>| {
             let mut cost: f64 = 0.0;
             for (param, goal) in params.iter().zip(goals.iter()) {
                 cost += (param - goal) * (param - goal);
