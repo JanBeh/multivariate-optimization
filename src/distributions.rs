@@ -1,6 +1,6 @@
 //! Univariate and multivariate probability distributions
 
-use crate::triangular::Triangular;
+pub use crate::triangular::Triangular;
 
 use num::traits::{Float, FloatConst, NumAssignOps, NumCast};
 use rand::{
