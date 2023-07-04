@@ -12,6 +12,14 @@ fn main() {
             x
         });
     });
+    let mut c = Criterion::default().configure_from_args();
+    c.bench_function("StdNormDistPair::sample", |b| {
+        let rng = &mut thread_rng();
+        b.iter(|| {
+            let (x, y): (f64, f64) = StdNormDistPair.sample(rng);
+            (x, y)
+        });
+    });
     c.bench_function("NormDist::sample", |b| {
         let rng = &mut thread_rng();
         b.iter(|| {

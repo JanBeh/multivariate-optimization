@@ -53,6 +53,19 @@ impl<T: Num> Distribution<T> for StdNormDist {
     }
 }
 
+/// Univariate standard normal distribtion with pairwise output
+#[derive(Clone, Copy, Default, Debug)]
+pub struct StdNormDistPair;
+
+impl<T: Num> Distribution<(T, T)> for StdNormDistPair {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> (T, T) {
+        let pi: T = T::PI();
+        let r = (T::from(-2.0).unwrap() * T::ln(T::sample_open_closed_01(rng))).sqrt();
+        let (sin, cos) = rng.gen_range(-pi..pi).sin_cos();
+        (r * sin, r * cos)
+    }
+}
+
 /// Univariate (non-standard) normal distribtion with given average and
 /// standard deviation
 #[derive(Clone, Debug)]
@@ -150,7 +163,12 @@ impl<T: Num> Distribution<Vec<T>> for MultivarNormDist<T> {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Vec<T> {
         let dim = self.dim();
         let mut result: Vec<T> = Vec::with_capacity(dim);
-        for _ in 0..dim {
+        for _ in 0..dim/2 {
+            let (x1, x2) = StdNormDistPair.sample(rng);
+            result.push(x1);
+            result.push(x2);
+        }
+        if dim % 2 == 1 {
             result.push(StdNormDist.sample(rng));
         }
         // SAFETY:
