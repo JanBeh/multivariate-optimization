@@ -18,7 +18,7 @@
 //!
 //! const POPULATION: usize = 1000;
 //! const MAX_ITERATIONS: usize = 1000;
-//! let mut solver = Solver::new(search_space, |params: Vec<f64>| {
+//! let mut solver = Solver::new(search_space, |params| {
 //!     let cost = rastrigin(&params);
 //!     BasicSpecimen { params, cost }
 //! });
@@ -210,7 +210,10 @@ impl<S, C> Solver<S, C> {
     ///
     /// [`S: Specimen`]: Specimen
     /// [module level documentation]: self
-    pub fn new(search_space: Vec<SearchRange>, constructor: C) -> Self {
+    pub fn new(search_space: Vec<SearchRange>, constructor: C) -> Self
+    where
+        C: Fn(Vec<f64>) -> S + Sync,
+    {
         let search_dists: Vec<SearchDist> = search_space
             .iter()
             .copied()
@@ -325,6 +328,25 @@ where
     C: Fn(Vec<f64>) -> F + Sync,
     F: Future<Output = S> + Send,
 {
+    /// Same as [`Solver::new`], but takes an asynchronous `constructor`.
+    pub fn new_async(search_space: Vec<SearchRange>, constructor: C) -> Self {
+        let search_dists: Vec<SearchDist> = search_space
+            .iter()
+            .copied()
+            .map(|search_range| SearchDist::from(search_range))
+            .collect();
+        let mut solver = Solver {
+            search_space,
+            search_dists,
+            constructor,
+            division_count: Default::default(),
+            min_population: Default::default(),
+            is_sorted: true,
+            specimens: vec![],
+        };
+        solver.set_division_count(1);
+        solver
+    }
     /// Same as [`Solver::initialize`], but asynchronous.
     pub async fn initialize_async(&mut self, count: usize) {
         let new_specimens = FuturesOrdered::from_iter(self.random_specimens(count));
