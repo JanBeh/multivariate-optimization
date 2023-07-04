@@ -57,12 +57,19 @@ impl<T: Num> Distribution<T> for StdNormDist {
 #[derive(Clone, Copy, Default, Debug)]
 pub struct StdNormDistPair;
 
-impl<T: Num> Distribution<(T, T)> for StdNormDistPair {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> (T, T) {
+impl<T: Num> Distribution<[T; 2]> for StdNormDistPair {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> [T; 2] {
         let pi: T = T::PI();
         let r = (T::from(-2.0).unwrap() * T::ln(T::sample_open_closed_01(rng))).sqrt();
         let (sin, cos) = rng.gen_range(-pi..pi).sin_cos();
-        (r * sin, r * cos)
+        [r * sin, r * cos]
+    }
+}
+
+impl<T: Num> Distribution<(T, T)> for StdNormDistPair {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> (T, T) {
+        let [x, y]: [T; 2] = self.sample(rng);
+        (x, y)
     }
 }
 
