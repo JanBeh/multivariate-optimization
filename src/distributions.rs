@@ -8,8 +8,6 @@ use rand::{
     Rng,
 };
 
-use std::marker::PhantomData;
-
 /// Numbers supported by generic items of this module
 pub trait Num
 where
@@ -43,17 +41,10 @@ pub trait MultivarDist<T>: Distribution<Vec<T>> {
 }
 
 /// Univariate standard normal distribtion
-#[derive(Clone, Debug)]
-pub struct StdNormDist<T>(PhantomData<fn() -> T>);
+#[derive(Clone, Copy, Default, Debug)]
+pub struct StdNormDist;
 
-impl<T> StdNormDist<T> {
-    /// Create univariate standard normal distribution (zero cost)
-    pub const fn new() -> Self {
-        Self(PhantomData)
-    }
-}
-
-impl<T: Num> Distribution<T> for StdNormDist<T> {
+impl<T: Num> Distribution<T> for StdNormDist {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> T {
         let pi: T = T::PI();
         let r = (T::from(-2.0).unwrap() * T::ln(T::sample_open_closed_01(rng))).sqrt();
@@ -81,7 +72,8 @@ impl<T> NormDist<T> {
 
 impl<T: Num> Distribution<T> for NormDist<T> {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> T {
-        StdNormDist::<T>::new().sample(rng) * self.stddev + self.average
+        let x: T = StdNormDist.sample(rng);
+        x * self.stddev + self.average
     }
 }
 
@@ -159,7 +151,7 @@ impl<T: Num> Distribution<Vec<T>> for MultivarNormDist<T> {
         let dim = self.dim();
         let mut result: Vec<T> = Vec::with_capacity(dim);
         for _ in 0..dim {
-            result.push(StdNormDist::<T>::new().sample(rng));
+            result.push(StdNormDist.sample(rng));
         }
         // SAFETY:
         //  *  `i` is smaller than `self.dim()` and thus smaller
@@ -189,7 +181,7 @@ mod tests {
     const STATCNT: usize = 10000;
     #[test]
     fn test_std_norm_dist() {
-        let values: Vec<f64> = StdNormDist::<f64>::new()
+        let values: Vec<f64> = StdNormDist
             .sample_iter(thread_rng())
             .take(STATCNT)
             .collect();

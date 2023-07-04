@@ -7,7 +7,10 @@ fn main() {
     let mut c = Criterion::default().configure_from_args();
     c.bench_function("StdNormDist::sample", |b| {
         let rng = &mut thread_rng();
-        b.iter(|| StdNormDist::<f64>::new().sample(rng));
+        b.iter(|| {
+            let x: f64 = StdNormDist.sample(rng);
+            x
+        });
     });
     c.bench_function("NormDist::sample", |b| {
         let rng = &mut thread_rng();
