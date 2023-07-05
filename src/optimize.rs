@@ -35,7 +35,7 @@
 //!     if solver.converged() {
 //!         break;
 //!     }
-//!     solver.evolution(POPULATION);
+//!     solver.evolution(POPULATION, 0.0);
 //! }
 //! let specimen = solver.into_specimen();
 //! assert_eq!(specimen.cost, 0.0);
@@ -232,14 +232,14 @@ where
     /// Calculates new specimens based on existing specimens and replaces
     /// existing specimens if the new ones are better than some of the
     /// existing ones. In the end, the population size remains the same.
-    pub fn evolution(&mut self, children_count: usize) {
-        self.recombine(children_count);
+    pub fn evolution(&mut self, children_count: usize, mutation_factor: f64) {
+        self.recombine(children_count, mutation_factor);
         self.shrink_by(children_count);
     }
     /// Add new specimens based on existing specimens (weighted depending on
     /// fitness).
-    pub fn recombine(&mut self, children_count: usize) {
-        let new_specimens = self.recombined_specimens(children_count);
+    pub fn recombine(&mut self, children_count: usize, mutation_factor: f64) {
+        let new_specimens = self.recombined_specimens(children_count, mutation_factor);
         self.is_sorted = false;
         self.specimens.extend(new_specimens);
     }
@@ -292,13 +292,14 @@ where
             .await;
     }
     /// Same as [`Solver::evolution`], but asynchronous.
-    pub async fn evolution_async(&mut self, children_count: usize) {
-        self.recombine_async(children_count).await;
+    pub async fn evolution_async(&mut self, children_count: usize, mutation_factor: f64) {
+        self.recombine_async(children_count, mutation_factor).await;
         self.shrink_by(children_count);
     }
     /// Same as [`Solver::recombine`], but asynchronous.
-    pub async fn recombine_async(&mut self, children_count: usize) {
-        let new_specimens = FuturesOrdered::from_iter(self.recombined_specimens(children_count));
+    pub async fn recombine_async(&mut self, children_count: usize, mutation_factor: f64) {
+        let new_specimens =
+            FuturesOrdered::from_iter(self.recombined_specimens(children_count, mutation_factor));
         self.specimens.reserve(children_count);
         self.is_sorted = false;
         new_specimens
@@ -468,7 +469,7 @@ where
     ///
     /// This private method is used by [`Solver::recombine`] and
     /// [`Solver::recombine_async`].
-    fn recombined_specimens<T>(&mut self, children_count: usize) -> Vec<T>
+    fn recombined_specimens<T>(&mut self, children_count: usize, mutation_factor: f64) -> Vec<T>
     where
         T: Send,
         S: Sync,
@@ -531,12 +532,19 @@ where
                 |rng, _| {
                     let param_groups_iter =
                         sub_dists.iter().map(|dist| dist.sample(rng).into_iter());
-                    let params: Vec<_> = conqueror.merge(param_groups_iter).collect();
+                    let mut params: Vec<_> = conqueror.merge(param_groups_iter).collect();
                     for (i, param) in params.iter().enumerate() {
                         if let SearchRange::Finite { low, high } = self.search_space[i] {
                             if !(low..=high).contains(param) {
                                 return self.random_specimen(rng);
                             }
+                        }
+                    }
+                    if mutation_factor > 0.0 {
+                        let keep = 1.0 - mutation_factor;
+                        let random_params = self.search_dists.iter().map(|dist| dist.sample(rng));
+                        for (param, random_param) in params.iter_mut().zip(random_params) {
+                            *param = keep * *param + mutation_factor * random_param;
                         }
                     }
                     (self.constructor)(params)
@@ -570,7 +578,7 @@ mod tests {
         });
         solver.initialize(200);
         for _ in 0..1000 {
-            solver.evolution(10);
+            solver.evolution(10, 0.0);
         }
         for (param, goal) in solver
             .specimens
