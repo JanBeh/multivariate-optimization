@@ -489,7 +489,6 @@ where
                 MultivarNormDist::new(averages, covariances)
             })
             .collect::<Vec<_>>(); // TODO: use boxed slice when supported by rayon
-        self.specimens.reserve(children_count);
         (0..children_count)
             .into_par_iter()
             .map_init(
