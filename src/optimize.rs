@@ -431,14 +431,20 @@ where
                 .collect::<Vec<f64>>(),
         )
     }
-    /// Create random specimens (optionally async if `T` is a [`Future`]).
+    /// Create random specimens
+    ///
+    /// If `Solver` was created with [`Solver::new_async`], then [`Future`]s of
+    /// specimens are returned instead.
     pub fn random_specimens(&self, count: usize) -> Vec<T> {
         (0..count)
             .into_par_iter()
             .map_init(|| rand::thread_rng(), |rng, _| self.random_specimen(rng))
             .collect()
     }
-    /// Create recombined specimens (optionally async if `T` is a [`Future`]).
+    /// Create recombined specimens.
+    ///
+    /// If `Solver` was created with [`Solver::new_async`], then [`Future`]s of
+    /// specimens are returned instead.
     pub fn recombined_specimens(&mut self, children_count: usize, mutation_factor: f64) -> Vec<T> {
         self.sort();
         let total_count = self.specimens.len();
