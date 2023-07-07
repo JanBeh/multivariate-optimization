@@ -417,11 +417,18 @@ where
         self.sort();
         self.specimens
     }
+}
+
+impl<S, C, T> Solver<S, C>
+where
+    S: Specimen + Send + Sync,
+    C: Fn(Vec<f64>) -> T + Sync,
+    T: Send,
+{
     /// Create random specimen (optionally async if `T` is a [`Future`]).
-    fn random_specimen<R, T>(&self, rng: &mut R) -> T
+    fn random_specimen<R>(&self, rng: &mut R) -> T
     where
         R: Rng + ?Sized,
-        C: Fn(Vec<f64>) -> T,
     {
         (self.constructor)(
             self.search_dists
@@ -431,11 +438,7 @@ where
         )
     }
     /// Create random specimens (optionally async if `T` is a [`Future`]).
-    pub fn random_specimens<T>(&self, count: usize) -> Vec<T>
-    where
-        T: Send,
-        C: Fn(Vec<f64>) -> T + Sync,
-    {
+    pub fn random_specimens(&self, count: usize) -> Vec<T> {
         (0..count)
             .into_par_iter()
             .map_init(|| rand::thread_rng(), |rng, _| self.random_specimen(rng))
@@ -445,12 +448,7 @@ where
     ///
     /// This private method is used by [`Solver::recombine`] and
     /// [`Solver::recombine_async`].
-    pub fn recombined_specimens<T>(&mut self, children_count: usize, mutation_factor: f64) -> Vec<T>
-    where
-        T: Send,
-        S: Sync,
-        C: Fn(Vec<f64>) -> T + Sync,
-    {
+    pub fn recombined_specimens(&mut self, children_count: usize, mutation_factor: f64) -> Vec<T> {
         self.sort();
         let total_count = self.specimens.len();
         let weights = {
