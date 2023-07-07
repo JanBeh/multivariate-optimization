@@ -325,6 +325,43 @@ impl<S, C> Solver<S, C>
 where
     S: Specimen + Send + Sync,
 {
+    /// Add specimens to population.
+    pub fn extend_specimens<I: IntoIterator<Item = S>>(&mut self, iter: I) {
+        self.is_sorted = false;
+        self.specimens.extend(iter);
+    }
+    /// Replace worst specimens in population.
+    pub fn replace_worst_specimens<I: IntoIterator<Item = S>>(&mut self, iter: I) {
+        let count = self.specimens.len();
+        self.extend_specimens(iter);
+        self.truncate(count);
+    }
+    /// Add specimens to population asynchronously.
+    pub async fn extend_specimens_async<F, I>(&mut self, iter: I)
+    where
+        F: Future<Output = S> + Send,
+        I: IntoIterator<Item = F>,
+    {
+        let new_specimens = FuturesOrdered::from_iter(iter);
+        self.specimens.reserve(new_specimens.len());
+        self.is_sorted = false;
+        new_specimens
+            .for_each(|specimen| {
+                self.specimens.push(specimen);
+                async { () }
+            })
+            .await;
+    }
+    /// Replace worst specimens in population asynchronously.
+    pub async fn replace_worst_specimens_async<F, I>(&mut self, iter: I)
+    where
+        F: Future<Output = S> + Send,
+        I: IntoIterator<Item = F>,
+    {
+        let count = self.specimens.len();
+        self.extend_specimens_async(iter).await;
+        self.truncate(count);
+    }
     /// Dimensionality of search space.
     pub fn dim(&self) -> usize {
         self.search_space.len()
