@@ -282,10 +282,8 @@ impl<S, C> Solver<S, C> {
     }
 }
 
-/// Implementations for synchronous `Solver`.
 impl<S, C> Solver<S, C>
 where
-    S: Specimen + Send + Sync,
     C: Fn(Vec<f64>) -> S + Sync,
 {
     /// Create `Solver` for search space and [`Specimen`] `constructor` closure.
@@ -303,10 +301,8 @@ where
     }
 }
 
-/// Implementations for asynchronous `Solver`.
 impl<S, C, F> Solver<S, C>
 where
-    S: Specimen + Send + Sync,
     C: Fn(Vec<f64>) -> F + Sync,
     F: Future<Output = S> + Send,
 {
@@ -324,11 +320,17 @@ where
     }
 }
 
-/// Implementations for synchronous and asynchronous `Solver`.
 impl<S, C> Solver<S, C>
 where
-    S: Specimen + Send + Sync,
+    S: Specimen + Send,
 {
+    /// Ensures that speciments are sorted based on cost (best first).
+    fn sort(&mut self) {
+        if !self.is_sorted {
+            self.specimens.par_sort_by(S::cmp_cost);
+            self.is_sorted = true;
+        }
+    }
     /// Add specimens to population.
     pub fn extend_specimens<I: IntoIterator<Item = S>>(&mut self, iter: I) {
         self.is_sorted = false;
@@ -365,13 +367,6 @@ where
         let count = self.specimens.len();
         self.extend_specimens_async(iter).await;
         self.truncate(count);
-    }
-    /// Ensures that speciments are sorted based on cost (best first).
-    pub fn sort(&mut self) {
-        if !self.is_sorted {
-            self.specimens.par_sort_by(S::cmp_cost);
-            self.is_sorted = true;
-        }
     }
     /// Truncate population of specimens to given `count`
     /// (drops worst fitting specimens).
