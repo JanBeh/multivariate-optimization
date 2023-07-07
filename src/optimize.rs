@@ -24,7 +24,8 @@
 //! });
 //! solver.set_speed_factor(0.5);
 //!
-//! solver.initialize(POPULATION);
+//! let initial_specimens = solver.random_specimens(POPULATION);
+//! solver.extend_specimens(initial_specimens);
 //! for iter in 0..MAX_ITERATIONS {
 //!     let specimens = solver.specimens();
 //!     println!(
@@ -35,7 +36,8 @@
 //!     if solver.converged() {
 //!         break;
 //!     }
-//!     solver.evolution(POPULATION, 0.0);
+//!     let new_specimens = solver.recombined_specimens(POPULATION, 0.0);
+//!     solver.replace_worst_specimens(new_specimens);
 //! }
 //! let specimen = solver.into_specimen();
 //! assert_eq!(specimen.cost, 0.0);
@@ -229,29 +231,6 @@ where
         solver.set_division_count(1);
         solver
     }
-    /// Add certain `count` of (random) specimens based on initial
-    /// [`SearchRange`]s.
-    pub fn initialize(&mut self, count: usize) {
-        let new_specimens = self.random_specimens(count);
-        self.is_sorted = false;
-        self.specimens.extend(new_specimens);
-    }
-    /// Evolutionary step.
-    ///
-    /// Calculates new specimens based on existing specimens and replaces
-    /// existing specimens if the new ones are better than some of the
-    /// existing ones. In the end, the population size remains the same.
-    pub fn evolution(&mut self, children_count: usize, mutation_factor: f64) {
-        self.recombine(children_count, mutation_factor);
-        self.shrink_by(children_count);
-    }
-    /// Add new specimens based on existing specimens (weighted depending on
-    /// fitness).
-    pub fn recombine(&mut self, children_count: usize, mutation_factor: f64) {
-        let new_specimens = self.recombined_specimens(children_count, mutation_factor);
-        self.is_sorted = false;
-        self.specimens.extend(new_specimens);
-    }
 }
 
 /// Implementations for asynchronous `Solver`.
@@ -287,36 +266,6 @@ where
         };
         solver.set_division_count(1);
         solver
-    }
-    /// Same as [`Solver::initialize`], but asynchronous.
-    pub async fn initialize_async(&mut self, count: usize) {
-        let new_specimens = FuturesOrdered::from_iter(self.random_specimens(count));
-        self.specimens.reserve(count);
-        self.is_sorted = false;
-        new_specimens
-            .for_each(|specimen| {
-                self.specimens.push(specimen);
-                async { () }
-            })
-            .await;
-    }
-    /// Same as [`Solver::evolution`], but asynchronous.
-    pub async fn evolution_async(&mut self, children_count: usize, mutation_factor: f64) {
-        self.recombine_async(children_count, mutation_factor).await;
-        self.shrink_by(children_count);
-    }
-    /// Same as [`Solver::recombine`], but asynchronous.
-    pub async fn recombine_async(&mut self, children_count: usize, mutation_factor: f64) {
-        let new_specimens =
-            FuturesOrdered::from_iter(self.recombined_specimens(children_count, mutation_factor));
-        self.specimens.reserve(children_count);
-        self.is_sorted = false;
-        new_specimens
-            .for_each(|specimen| {
-                self.specimens.push(specimen);
-                async { () }
-            })
-            .await;
     }
 }
 
@@ -432,17 +381,6 @@ where
             self.is_sorted = true;
         }
     }
-    /// Shrink population of specimens by given `count`
-    /// (drops worst fitting specimens).
-    pub fn shrink_by(&mut self, count: usize) {
-        self.sort();
-        let len = self.specimens.len();
-        if count >= len {
-            self.specimens.clear();
-        } else {
-            self.specimens.truncate(len - count);
-        }
-    }
     /// Truncate population of specimens to given `count`
     /// (drops worst fitting specimens).
     pub fn truncate(&mut self, count: usize) {
@@ -501,7 +439,7 @@ where
         )
     }
     /// Create random specimens (optionally async if `T` is a [`Future`]).
-    fn random_specimens<T>(&self, count: usize) -> Vec<T>
+    pub fn random_specimens<T>(&self, count: usize) -> Vec<T>
     where
         T: Send,
         C: Fn(Vec<f64>) -> T + Sync,
@@ -515,7 +453,7 @@ where
     ///
     /// This private method is used by [`Solver::recombine`] and
     /// [`Solver::recombine_async`].
-    fn recombined_specimens<T>(&mut self, children_count: usize, mutation_factor: f64) -> Vec<T>
+    pub fn recombined_specimens<T>(&mut self, children_count: usize, mutation_factor: f64) -> Vec<T>
     where
         T: Send,
         S: Sync,
@@ -622,9 +560,11 @@ mod tests {
             }
             BasicSpecimen { params, cost }
         });
-        solver.initialize(200);
+        let initial_specimens = solver.random_specimens(200);
+        solver.extend_specimens(initial_specimens);
         for _ in 0..1000 {
-            solver.evolution(10, 0.0);
+            let new_specimens = solver.recombined_specimens(10, 0.0);
+            solver.replace_worst_specimens(new_specimens);
         }
         for (param, goal) in solver
             .specimens
