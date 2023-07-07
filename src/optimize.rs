@@ -197,23 +197,9 @@ pub struct Solver<S, C> {
     specimens: Vec<S>,
 }
 
-/// Implementations for synchronous `Solver`.
-impl<S, C> Solver<S, C>
-where
-    S: Specimen + Send + Sync,
-    C: Fn(Vec<f64>) -> S + Sync,
-{
-    /// Create `Solver` for search space and [`Specimen`] `constructor` closure.
-    ///
-    /// The closure takes a [`Vec<f64>`] as argument, which contains the
-    /// coefficients/parameters, and it returns an [`S: Specimen`].
-    /// See [module level documentation] for a code example.
-    ///
-    /// For asynchronous constructors, method [`Solver::new_async`] can be used.
-    ///
-    /// [`S: Specimen`]: Specimen
-    /// [module level documentation]: self
-    pub fn new(search_space: Vec<SearchRange>, constructor: C) -> Self {
+impl<S, C> Solver<S, C> {
+    /// Generic variant of [`Solver::new`].
+    fn new_generic(search_space: Vec<SearchRange>, constructor: C) -> Self {
         let search_dists: Vec<SearchDist> = search_space
             .iter()
             .copied()
@@ -230,86 +216,6 @@ where
         };
         solver.set_division_count(1);
         solver
-    }
-}
-
-/// Implementations for asynchronous `Solver`.
-impl<S, C, F> Solver<S, C>
-where
-    S: Specimen + Send + Sync,
-    C: Fn(Vec<f64>) -> F + Sync,
-    F: Future<Output = S> + Send,
-{
-    /// Same as [`Solver::new`], but takes an asynchronous `constructor`.
-    ///
-    /// Note that when using this method, methods [`initialize_async`],
-    /// [`evolution_async`], and/or [`recombine_async`] must also be used
-    /// instead of their synchronous equivalents.
-    ///
-    /// [`initialize_async`]: Self::initialize_async
-    /// [`evolution_async`]: Self::evolution_async
-    /// [`recombine_async`]: Self::recombine_async
-    pub fn new_async(search_space: Vec<SearchRange>, constructor: C) -> Self {
-        let search_dists: Vec<SearchDist> = search_space
-            .iter()
-            .copied()
-            .map(|search_range| SearchDist::from(search_range))
-            .collect();
-        let mut solver = Solver {
-            search_space,
-            search_dists,
-            constructor,
-            division_count: Default::default(),
-            min_population: Default::default(),
-            is_sorted: true,
-            specimens: vec![],
-        };
-        solver.set_division_count(1);
-        solver
-    }
-}
-
-/// Implementations for synchronous and asynchronous `Solver`.
-impl<S, C> Solver<S, C>
-where
-    S: Specimen + Send + Sync,
-{
-    /// Add specimens to population.
-    pub fn extend_specimens<I: IntoIterator<Item = S>>(&mut self, iter: I) {
-        self.is_sorted = false;
-        self.specimens.extend(iter);
-    }
-    /// Replace worst specimens in population.
-    pub fn replace_worst_specimens<I: IntoIterator<Item = S>>(&mut self, iter: I) {
-        let count = self.specimens.len();
-        self.extend_specimens(iter);
-        self.truncate(count);
-    }
-    /// Add specimens to population asynchronously.
-    pub async fn extend_specimens_async<F, I>(&mut self, iter: I)
-    where
-        F: Future<Output = S> + Send,
-        I: IntoIterator<Item = F>,
-    {
-        let new_specimens = FuturesOrdered::from_iter(iter);
-        self.specimens.reserve(new_specimens.len());
-        self.is_sorted = false;
-        new_specimens
-            .for_each(|specimen| {
-                self.specimens.push(specimen);
-                async { () }
-            })
-            .await;
-    }
-    /// Replace worst specimens in population asynchronously.
-    pub async fn replace_worst_specimens_async<F, I>(&mut self, iter: I)
-    where
-        F: Future<Output = S> + Send,
-        I: IntoIterator<Item = F>,
-    {
-        let count = self.specimens.len();
-        self.extend_specimens_async(iter).await;
-        self.truncate(count);
     }
     /// Dimensionality of search space.
     pub fn dim(&self) -> usize {
@@ -373,6 +279,92 @@ where
     /// into which the dimensions are split when calculating covariances.
     pub fn min_population(&self) -> usize {
         self.min_population
+    }
+}
+
+/// Implementations for synchronous `Solver`.
+impl<S, C> Solver<S, C>
+where
+    S: Specimen + Send + Sync,
+    C: Fn(Vec<f64>) -> S + Sync,
+{
+    /// Create `Solver` for search space and [`Specimen`] `constructor` closure.
+    ///
+    /// The closure takes a [`Vec<f64>`] as argument, which contains the
+    /// coefficients/parameters, and it returns an [`S: Specimen`].
+    /// See [module level documentation] for a code example.
+    ///
+    /// For asynchronous constructors, method [`Solver::new_async`] can be used.
+    ///
+    /// [`S: Specimen`]: Specimen
+    /// [module level documentation]: self
+    pub fn new(search_space: Vec<SearchRange>, constructor: C) -> Self {
+        Self::new_generic(search_space, constructor)
+    }
+}
+
+/// Implementations for asynchronous `Solver`.
+impl<S, C, F> Solver<S, C>
+where
+    S: Specimen + Send + Sync,
+    C: Fn(Vec<f64>) -> F + Sync,
+    F: Future<Output = S> + Send,
+{
+    /// Same as [`Solver::new`], but takes an asynchronous `constructor`.
+    ///
+    /// Note that when using this method, methods [`initialize_async`],
+    /// [`evolution_async`], and/or [`recombine_async`] must also be used
+    /// instead of their synchronous equivalents.
+    ///
+    /// [`initialize_async`]: Self::initialize_async
+    /// [`evolution_async`]: Self::evolution_async
+    /// [`recombine_async`]: Self::recombine_async
+    pub fn new_async(search_space: Vec<SearchRange>, constructor: C) -> Self {
+        Self::new_generic(search_space, constructor)
+    }
+}
+
+/// Implementations for synchronous and asynchronous `Solver`.
+impl<S, C> Solver<S, C>
+where
+    S: Specimen + Send + Sync,
+{
+    /// Add specimens to population.
+    pub fn extend_specimens<I: IntoIterator<Item = S>>(&mut self, iter: I) {
+        self.is_sorted = false;
+        self.specimens.extend(iter);
+    }
+    /// Replace worst specimens in population.
+    pub fn replace_worst_specimens<I: IntoIterator<Item = S>>(&mut self, iter: I) {
+        let count = self.specimens.len();
+        self.extend_specimens(iter);
+        self.truncate(count);
+    }
+    /// Add specimens to population asynchronously.
+    pub async fn extend_specimens_async<F, I>(&mut self, iter: I)
+    where
+        F: Future<Output = S> + Send,
+        I: IntoIterator<Item = F>,
+    {
+        let new_specimens = FuturesOrdered::from_iter(iter);
+        self.specimens.reserve(new_specimens.len());
+        self.is_sorted = false;
+        new_specimens
+            .for_each(|specimen| {
+                self.specimens.push(specimen);
+                async { () }
+            })
+            .await;
+    }
+    /// Replace worst specimens in population asynchronously.
+    pub async fn replace_worst_specimens_async<F, I>(&mut self, iter: I)
+    where
+        F: Future<Output = S> + Send,
+        I: IntoIterator<Item = F>,
+    {
+        let count = self.specimens.len();
+        self.extend_specimens_async(iter).await;
+        self.truncate(count);
     }
     /// Ensures that speciments are sorted based on cost (best first).
     pub fn sort(&mut self) {
