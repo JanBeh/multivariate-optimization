@@ -339,7 +339,7 @@ where
     pub fn replace_worst_specimens<I: IntoIterator<Item = S>>(&mut self, iter: I) {
         let count = self.specimens.len();
         self.extend_specimens(iter);
-        self.truncate(count);
+        self.truncate_specimens(count);
     }
     /// Add specimens to population asynchronously.
     pub async fn extend_specimens_async<F, I>(&mut self, iter: I)
@@ -365,11 +365,11 @@ where
     {
         let count = self.specimens.len();
         self.extend_specimens_async(iter).await;
-        self.truncate(count);
+        self.truncate_specimens(count);
     }
     /// Truncate population of specimens to given `count`
     /// (drops worst fitting specimens).
-    pub fn truncate(&mut self, count: usize) {
+    pub fn truncate_specimens(&mut self, count: usize) {
         self.sort();
         self.specimens.truncate(count);
     }
