@@ -136,6 +136,15 @@ pub trait Specimen {
     ///
     /// [`Less`]: Ordering::Less
     fn cmp_cost(&self, other: &Self) -> Ordering;
+    /// Euclidean distance between two specimens' parameters
+    fn params_dist(&self, other: &Self) -> f64 {
+        self.params()
+            .iter()
+            .copied()
+            .zip(other.params().iter().copied())
+            .map(|(a, b)| (a - b).powf(2.0))
+            .sum()
+    }
 }
 
 /// Most simple implementation of a [`Specimen`].
