@@ -471,10 +471,10 @@ where
                             .map(|(specimen, weight)| weight * specimen.params()[i_orig])
                             .sum::<f64>()
                     })
-                    .collect::<Vec<_>>() // TODO: use boxed slice when supported by rayon
+                    .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>(); // TODO: use boxed slice when supported by rayon
-        let sub_dists: Vec<_> = conqueror
+        let sub_dists = conqueror
             .groups()
             .par_iter()
             .zip(sub_averages.into_par_iter())
@@ -515,6 +515,74 @@ where
                         let random_params = self.search_dists.iter().map(|dist| dist.sample(rng));
                         for (param, random_param) in params.iter_mut().zip(random_params) {
                             *param = keep * *param + mutation_factor * random_param;
+                        }
+                    }
+                    (self.constructor)(params)
+                },
+            )
+            .collect()
+    }
+    /// Create recombined specimens based on similar specimens.
+    ///
+    /// If `Solver` was created with [`Solver::new_async`], then [`Future`]s of
+    /// specimens are returned instead.
+    pub fn locally_recombined_specimens(&mut self) -> Vec<T> {
+        let total_count = self.specimens.len();
+        self.specimens
+            .par_iter()
+            .map_init(
+                || rand::thread_rng(),
+                |rng, center| {
+                    let mut specimens: Vec<&_> = self.specimens.iter().collect();
+                    specimens
+                        .sort_by(|a, b| center.params_dist(a).total_cmp(&center.params_dist(b)));
+                    let count = rng.gen_range(2..total_count);
+                    specimens.truncate(count);
+                    let conqueror =
+                        Conqueror::new(&mut rand::thread_rng(), self.dim(), self.division_count());
+                    let sub_averages = conqueror
+                        .groups()
+                        .iter()
+                        .map(|group| {
+                            (0..group.len())
+                                .into_iter()
+                                .map(|i| {
+                                    let i_orig = group[i];
+                                    self.specimens
+                                        .iter()
+                                        .map(|specimen| specimen.params()[i_orig])
+                                        .sum::<f64>()
+                                        / count as f64
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>(); // TODO: use boxed slice when it supports `into_iter`
+                    let param_groups_iter = conqueror
+                        .groups()
+                        .iter()
+                        .zip(sub_averages.into_iter())
+                        .map(|(group, averages)| {
+                            let covariances = Triangular::<f64>::new(group.len(), |(i, j)| {
+                                let i_orig = group[i];
+                                let j_orig = group[j];
+                                self.specimens
+                                    .iter()
+                                    .map(|specimen| {
+                                        let a = specimen.params()[i_orig] - averages[i];
+                                        let b = specimen.params()[j_orig] - averages[j];
+                                        a * b
+                                    })
+                                    .sum::<f64>()
+                                    / count as f64
+                            });
+                            MultivarNormDist::new(averages, covariances).sample(rng).into_iter()
+                        });
+                    let params: Vec<_> = conqueror.merge(param_groups_iter).collect();
+                    for (i, param) in params.iter().enumerate() {
+                        if let SearchRange::Finite { low, high } = self.search_space[i] {
+                            if !(low..=high).contains(param) {
+                                return self.random_specimen(rng);
+                            }
                         }
                     }
                     (self.constructor)(params)
