@@ -176,11 +176,11 @@ impl Specimen for BasicSpecimen {
 ///
 /// * [`Solver::new`]
 /// * [`Solver::set_speed_factor`]
-/// * [`Solver::initialize`]
+/// * Pass result of [`Solver::random_specimens`] to [`Solver::extend_specimens`]
 /// * In a loop:
 ///     * Inspect first element (or more elements) of [`Solver::specimens`],
 ///       e.g. for a break condition
-///     * [`Solver::evolution`]
+///     * Pass result of [`Solver::recombined_specimens`] to [`Solver::replace_worst_specimens`]
 /// * Extract best specimen, e.g. using [`Solver::into_specimen`]
 ///
 /// See [module level documentation] for a code example.
@@ -308,13 +308,12 @@ where
 {
     /// Same as [`Solver::new`], but takes an asynchronous `constructor`.
     ///
-    /// Note that when using this method, methods [`initialize_async`],
-    /// [`evolution_async`], and/or [`recombine_async`] must also be used
-    /// instead of their synchronous equivalents.
+    /// Note that when using this method, methods [`extend_specimens_async`]
+    /// and [`replace_worst_specimens_async`] must also be used instead of
+    /// their synchronous equivalents.
     ///
-    /// [`initialize_async`]: Self::initialize_async
-    /// [`evolution_async`]: Self::evolution_async
-    /// [`recombine_async`]: Self::recombine_async
+    /// [`extend_specimens_async`]: Self::extend_specimens_async
+    /// [`replace_worst_specimens_async`]: Self::replace_worst_specimens_async
     pub fn new_async(search_space: Vec<SearchRange>, constructor: C) -> Self {
         Self::new_generic(search_space, constructor)
     }
@@ -440,9 +439,6 @@ where
             .collect()
     }
     /// Create recombined specimens (optionally async if `T` is a [`Future`]).
-    ///
-    /// This private method is used by [`Solver::recombine`] and
-    /// [`Solver::recombine_async`].
     pub fn recombined_specimens(&mut self, children_count: usize, mutation_factor: f64) -> Vec<T> {
         self.sort();
         let total_count = self.specimens.len();
