@@ -50,7 +50,8 @@ use crate::distributions::{MultivarNormDist, NormDist};
 use crate::triangular::Triangular;
 
 use futures::stream::{FuturesOrdered, StreamExt};
-use rand::distributions::{Distribution, Uniform};
+use rand::distributions::{Distribution, OpenClosed01, Uniform};
+use rand::seq::SliceRandom;
 use rand::Rng;
 use rayon::prelude::*;
 
@@ -522,6 +523,79 @@ where
             )
             .collect()
     }
+    /// TODO
+    pub fn recombined_specimens2(&mut self, children_count: usize) -> Vec<T> {
+        self.sort();
+        let total_count = self.specimens.len();
+        let total_weight = total_count as f64;
+        let conqueror = Conqueror::new(&mut rand::thread_rng(), self.dim(), self.division_count());
+        let sub_averages = conqueror
+            .groups()
+            .par_iter()
+            .map(|group| {
+                (0..group.len())
+                    .into_par_iter()
+                    .map(|i| {
+                        let i_orig = group[i];
+                        self.specimens
+                            .par_iter()
+                            .map(|specimen| specimen.params()[i_orig])
+                            .sum::<f64>()
+                            / total_weight
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>(); // TODO: use boxed slice when supported by rayon
+        let sub_dists = conqueror
+            .groups()
+            .par_iter()
+            .zip(sub_averages.into_par_iter())
+            .map(|(group, averages)| {
+                let covariances = Triangular::<f64>::par_new(group.len(), |(i, j)| {
+                    let i_orig = group[i];
+                    let j_orig = group[j];
+                    self.specimens
+                        .iter()
+                        .map(|specimen| {
+                            let a = specimen.params()[i_orig] - averages[i];
+                            let b = specimen.params()[j_orig] - averages[j];
+                            a * b
+                        })
+                        .sum::<f64>()
+                        / total_weight
+                });
+                MultivarNormDist::new(averages, covariances)
+            })
+            .collect::<Vec<_>>(); // TODO: use boxed slice when supported by rayon
+        (0..children_count)
+            .into_par_iter()
+            .map_init(
+                || rand::thread_rng(),
+                |rng, _| {
+                    let param_groups_iter =
+                        sub_dists.iter().map(|dist| dist.sample(rng).into_iter());
+                    let mut params: Vec<_> = conqueror.merge(param_groups_iter).collect();
+                    let specimen = self.specimens.choose(rng).unwrap();
+                    let parent_params = specimen.params();
+                    let factor1: f64 = if rng.gen_range(0..60) == 0 {
+                        OpenClosed01.sample(rng)
+                    } else {
+                        1.0
+                    };
+                    let factor2: f64 = 1.0 - factor1;
+                    for i in 0..params.len() {
+                        params[i] = factor1 * params[i] + factor2 * parent_params[i];
+                        if let SearchRange::Finite { low, high } = self.search_space[i] {
+                            if !(low..=high).contains(&params[i]) {
+                                return self.random_specimen(rng);
+                            }
+                        }
+                    }
+                    (self.constructor)(params)
+                },
+            )
+            .collect()
+    }
     /// Create recombined specimens based on similar specimens.
     ///
     /// If `Solver` was created with [`Solver::new_async`], then [`Future`]s of
@@ -557,26 +631,27 @@ where
                                 .collect::<Vec<_>>()
                         })
                         .collect::<Vec<_>>(); // TODO: use boxed slice when it supports `into_iter`
-                    let param_groups_iter = conqueror
-                        .groups()
-                        .iter()
-                        .zip(sub_averages.into_iter())
-                        .map(|(group, averages)| {
-                            let covariances = Triangular::<f64>::new(group.len(), |(i, j)| {
-                                let i_orig = group[i];
-                                let j_orig = group[j];
-                                self.specimens
-                                    .iter()
-                                    .map(|specimen| {
-                                        let a = specimen.params()[i_orig] - averages[i];
-                                        let b = specimen.params()[j_orig] - averages[j];
-                                        a * b
-                                    })
-                                    .sum::<f64>()
-                                    / count as f64
-                            });
-                            MultivarNormDist::new(averages, covariances).sample(rng).into_iter()
-                        });
+                    let param_groups_iter =
+                        conqueror.groups().iter().zip(sub_averages.into_iter()).map(
+                            |(group, averages)| {
+                                let covariances = Triangular::<f64>::new(group.len(), |(i, j)| {
+                                    let i_orig = group[i];
+                                    let j_orig = group[j];
+                                    self.specimens
+                                        .iter()
+                                        .map(|specimen| {
+                                            let a = specimen.params()[i_orig] - averages[i];
+                                            let b = specimen.params()[j_orig] - averages[j];
+                                            a * b
+                                        })
+                                        .sum::<f64>()
+                                        / count as f64
+                                });
+                                MultivarNormDist::new(averages, covariances)
+                                    .sample(rng)
+                                    .into_iter()
+                            },
+                        );
                     let params: Vec<_> = conqueror.merge(param_groups_iter).collect();
                     for (i, param) in params.iter().enumerate() {
                         if let SearchRange::Finite { low, high } = self.search_space[i] {
