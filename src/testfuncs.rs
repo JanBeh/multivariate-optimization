@@ -43,9 +43,9 @@ pub const SCHWEFEL_RANGE: SearchRange = SearchRange::Finite {
     high: 500.0,
 };
 
-/// Schwefel function.
+/// Scaled Schwefel function.
 pub fn schwefel(args: &[f64]) -> f64 {
     let dim = args.len() as f64;
     let sum: f64 = args.iter().copied().map(|x| x * x.abs().sqrt().sin()).sum();
-    418.982887272433800 * dim - sum
+    dim - sum / 418.982887272433800
 }
