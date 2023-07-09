@@ -506,7 +506,7 @@ where
                     let specimen = self.specimens.choose(rng).unwrap();
                     let parent_params = specimen.params();
                     let factor1: f64 = Standard.sample(rng);
-                    let factor1 = factor1.powf(local_divisor);
+                    let factor1 = 2.0 * factor1.powf(local_divisor);
                     let factor2: f64 = 1.0 - factor1;
                     for i in 0..params.len() {
                         params[i] = factor1 * parent_params[i] + factor2 * params[i];
