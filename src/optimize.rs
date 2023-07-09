@@ -577,14 +577,11 @@ where
                     let mut params: Vec<_> = conqueror.merge(param_groups_iter).collect();
                     let specimen = self.specimens.choose(rng).unwrap();
                     let parent_params = specimen.params();
-                    let factor1: f64 = if rng.gen_range(0..60) == 0 {
-                        OpenClosed01.sample(rng)
-                    } else {
-                        1.0
-                    };
+                    let factor1: f64 = OpenClosed01.sample(rng);
+                    let factor1 = factor1.powf(360.0);
                     let factor2: f64 = 1.0 - factor1;
                     for i in 0..params.len() {
-                        params[i] = factor1 * params[i] + factor2 * parent_params[i];
+                        params[i] = factor1 * parent_params[i] + factor2 * params[i];
                         if let SearchRange::Finite { low, high } = self.search_space[i] {
                             if !(low..=high).contains(&params[i]) {
                                 return self.random_specimen(rng);
