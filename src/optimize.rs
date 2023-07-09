@@ -483,6 +483,7 @@ where
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>(); // TODO: use boxed slice when supported by rayon
+        let scale = (1.0 + mutation_factor) / total_weight;
         let sub_dists = conqueror
             .groups()
             .par_iter()
@@ -499,12 +500,11 @@ where
                             a * b
                         })
                         .sum::<f64>()
-                        / total_weight
+                        * scale
                 });
                 MultivarNormDist::new(averages, covariances)
             })
             .collect::<Vec<_>>(); // TODO: use boxed slice when supported by rayon
-        let keep = 1.0 - mutation_factor;
         let local_exp = if local_factor > 0.0 {
             1.0 / local_factor
         } else {
@@ -529,12 +529,6 @@ where
                             if !(low..=high).contains(&params[i]) {
                                 return self.random_specimen(rng);
                             }
-                        }
-                    }
-                    if mutation_factor > 0.0 {
-                        let random_params = self.search_dists.iter().map(|dist| dist.sample(rng));
-                        for (param, random_param) in params.iter_mut().zip(random_params) {
-                            *param = keep * *param + mutation_factor * random_param;
                         }
                     }
                     (self.constructor)(params)
