@@ -36,7 +36,7 @@
 //!     if solver.converged() {
 //!         break;
 //!     }
-//!     let new_specimens = solver.recombined_specimens(POPULATION, 0.0);
+//!     let new_specimens = solver.recombined_specimens(POPULATION, 0.0, f64::INFINITY);
 //!     solver.replace_worst_specimens(new_specimens);
 //! }
 //! let specimen = solver.into_specimen();
@@ -50,7 +50,7 @@ use crate::distributions::{MultivarNormDist, NormDist};
 use crate::triangular::Triangular;
 
 use futures::stream::{FuturesOrdered, StreamExt};
-use rand::distributions::{Distribution, OpenClosed01, Uniform};
+use rand::distributions::{Distribution, Standard, Uniform};
 use rand::seq::SliceRandom;
 use rand::Rng;
 use rayon::prelude::*;
@@ -446,85 +446,12 @@ where
     ///
     /// If `Solver` was created with [`Solver::new_async`], then [`Future`]s of
     /// specimens are returned instead.
-    pub fn recombined_specimens(&mut self, children_count: usize, mutation_factor: f64) -> Vec<T> {
-        self.sort();
-        let total_count = self.specimens.len();
-        let weights = {
-            let total_weight = total_count as f64 * (total_count as f64 + 1.0) / 2.0;
-            (1..=total_count)
-                .into_iter()
-                .rev()
-                .map(|n| n as f64 / total_weight)
-                .collect::<Box<[_]>>()
-        };
-        let conqueror = Conqueror::new(&mut rand::thread_rng(), self.dim(), self.division_count());
-        let sub_averages = conqueror
-            .groups()
-            .par_iter()
-            .map(|group| {
-                (0..group.len())
-                    .into_par_iter()
-                    .map(|i| {
-                        let i_orig = group[i];
-                        self.specimens
-                            .par_iter()
-                            .zip(weights.par_iter().copied())
-                            .map(|(specimen, weight)| weight * specimen.params()[i_orig])
-                            .sum::<f64>()
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>(); // TODO: use boxed slice when supported by rayon
-        let sub_dists = conqueror
-            .groups()
-            .par_iter()
-            .zip(sub_averages.into_par_iter())
-            .map(|(group, averages)| {
-                let covariances = Triangular::<f64>::par_new(group.len(), |(i, j)| {
-                    let i_orig = group[i];
-                    let j_orig = group[j];
-                    self.specimens
-                        .iter()
-                        .zip(weights.iter().copied())
-                        .map(|(specimen, weight)| {
-                            let a = specimen.params()[i_orig] - averages[i];
-                            let b = specimen.params()[j_orig] - averages[j];
-                            weight * (a * b)
-                        })
-                        .sum::<f64>()
-                });
-                MultivarNormDist::new(averages, covariances)
-            })
-            .collect::<Vec<_>>(); // TODO: use boxed slice when supported by rayon
-        (0..children_count)
-            .into_par_iter()
-            .map_init(
-                || rand::thread_rng(),
-                |rng, _| {
-                    let param_groups_iter =
-                        sub_dists.iter().map(|dist| dist.sample(rng).into_iter());
-                    let mut params: Vec<_> = conqueror.merge(param_groups_iter).collect();
-                    for (i, param) in params.iter().enumerate() {
-                        if let SearchRange::Finite { low, high } = self.search_space[i] {
-                            if !(low..=high).contains(param) {
-                                return self.random_specimen(rng);
-                            }
-                        }
-                    }
-                    if mutation_factor > 0.0 {
-                        let keep = 1.0 - mutation_factor;
-                        let random_params = self.search_dists.iter().map(|dist| dist.sample(rng));
-                        for (param, random_param) in params.iter_mut().zip(random_params) {
-                            *param = keep * *param + mutation_factor * random_param;
-                        }
-                    }
-                    (self.constructor)(params)
-                },
-            )
-            .collect()
-    }
-    /// TODO
-    pub fn recombined_specimens2(&mut self, children_count: usize) -> Vec<T> {
+    pub fn recombined_specimens(
+        &mut self,
+        children_count: usize,
+        mutation_factor: f64,
+        local_divisor: f64,
+    ) -> Vec<T> {
         self.sort();
         let total_count = self.specimens.len();
         let total_weight = total_count as f64;
@@ -567,6 +494,7 @@ where
                 MultivarNormDist::new(averages, covariances)
             })
             .collect::<Vec<_>>(); // TODO: use boxed slice when supported by rayon
+        let keep = 1.0 - mutation_factor;
         (0..children_count)
             .into_par_iter()
             .map_init(
@@ -577,8 +505,8 @@ where
                     let mut params: Vec<_> = conqueror.merge(param_groups_iter).collect();
                     let specimen = self.specimens.choose(rng).unwrap();
                     let parent_params = specimen.params();
-                    let factor1: f64 = OpenClosed01.sample(rng);
-                    let factor1 = factor1.powf(360.0);
+                    let factor1: f64 = Standard.sample(rng);
+                    let factor1 = factor1.powf(local_divisor);
                     let factor2: f64 = 1.0 - factor1;
                     for i in 0..params.len() {
                         params[i] = factor1 * parent_params[i] + factor2 * params[i];
@@ -586,6 +514,12 @@ where
                             if !(low..=high).contains(&params[i]) {
                                 return self.random_specimen(rng);
                             }
+                        }
+                    }
+                    if mutation_factor > 0.0 {
+                        let random_params = self.search_dists.iter().map(|dist| dist.sample(rng));
+                        for (param, random_param) in params.iter_mut().zip(random_params) {
+                            *param = keep * *param + mutation_factor * random_param;
                         }
                     }
                     (self.constructor)(params)
@@ -689,7 +623,7 @@ mod tests {
         let initial_specimens = solver.random_specimens(200);
         solver.extend_specimens(initial_specimens);
         for _ in 0..1000 {
-            let new_specimens = solver.recombined_specimens(10, 0.0);
+            let new_specimens = solver.recombined_specimens(10, 0.0, f64::INFINITY);
             solver.replace_worst_specimens(new_specimens);
         }
         for (param, goal) in solver
