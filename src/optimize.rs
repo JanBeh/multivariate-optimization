@@ -36,7 +36,7 @@
 //!     if solver.converged() {
 //!         break;
 //!     }
-//!     let new_specimens = solver.recombined_specimens(POPULATION, 0.0, 0.0);
+//!     let new_specimens = solver.recombined_specimens(POPULATION, 0.0);
 //!     solver.replace_worst_specimens(new_specimens);
 //! }
 //! let specimen = solver.into_specimen();
@@ -447,10 +447,6 @@ where
     /// If `Solver` was created with [`Solver::new_async`], then [`Future`]s of
     /// specimens are returned instead.
     ///
-    /// The `mutation_factor` between `0.0` and `1.0` specifies how "random"
-    /// newly created specimens should be (`1.0` means fully random, i.e. no
-    /// recombination).
-    ///
     /// Setting the `local_factor` to a value greater than `0.0` (but smaller
     /// than `1.0`) selects a particular specimen with a correspondingly
     /// proportional chance to be modified. This allows performing more
@@ -459,7 +455,6 @@ where
     pub fn recombined_specimens(
         &mut self,
         children_count: usize,
-        mutation_factor: f64,
         local_factor: f64,
     ) -> Vec<T> {
         self.sort();
@@ -483,7 +478,6 @@ where
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>(); // TODO: use boxed slice when supported by rayon
-        let scale = (1.0 + mutation_factor) / total_weight;
         let sub_dists = conqueror
             .groups()
             .par_iter()
@@ -500,7 +494,7 @@ where
                             a * b
                         })
                         .sum::<f64>()
-                        * scale
+                        / total_weight
                 });
                 MultivarNormDist::new(averages, covariances)
             })
@@ -563,7 +557,7 @@ mod tests {
         let initial_specimens = solver.random_specimens(200);
         solver.extend_specimens(initial_specimens);
         for _ in 0..1000 {
-            let new_specimens = solver.recombined_specimens(10, 0.0, 0.0);
+            let new_specimens = solver.recombined_specimens(10, 0.0);
             solver.replace_worst_specimens(new_specimens);
         }
         for (param, goal) in solver
