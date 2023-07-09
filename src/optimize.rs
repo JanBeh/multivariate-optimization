@@ -36,7 +36,7 @@
 //!     if solver.converged() {
 //!         break;
 //!     }
-//!     let new_specimens = solver.recombined_specimens(POPULATION, 0.0, f64::INFINITY);
+//!     let new_specimens = solver.recombined_specimens(POPULATION, 0.0, 0.0);
 //!     solver.replace_worst_specimens(new_specimens);
 //! }
 //! let specimen = solver.into_specimen();
@@ -446,11 +446,21 @@ where
     ///
     /// If `Solver` was created with [`Solver::new_async`], then [`Future`]s of
     /// specimens are returned instead.
+    ///
+    /// The `mutation_factor` between `0.0` and `1.0` specifies how "random"
+    /// newly created specimens should be (`1.0` means fully random, i.e. no
+    /// recombination).
+    ///
+    /// Setting the `local_factor` to a value greater than `0.0` (but smaller
+    /// than `1.0`) selects a particular specimen with a correspondingly
+    /// proportional chance to be modified. This allows performing more
+    /// localized searches. A reasonable value seems to be
+    /// `1.0 / (60.0 * self.dim())`.
     pub fn recombined_specimens(
         &mut self,
         children_count: usize,
         mutation_factor: f64,
-        local_divisor: f64,
+        local_factor: f64,
     ) -> Vec<T> {
         self.sort();
         let total_count = self.specimens.len();
@@ -495,6 +505,11 @@ where
             })
             .collect::<Vec<_>>(); // TODO: use boxed slice when supported by rayon
         let keep = 1.0 - mutation_factor;
+        let local_exp = if local_factor > 0.0 {
+            1.0 / local_factor
+        } else {
+            f64::INFINITY
+        };
         (0..children_count)
             .into_par_iter()
             .map_init(
@@ -506,7 +521,7 @@ where
                     let specimen = self.specimens.choose(rng).unwrap();
                     let parent_params = specimen.params();
                     let factor1: f64 = Standard.sample(rng);
-                    let factor1 = 2.0 * factor1.powf(local_divisor);
+                    let factor1 = 2.0 * factor1.powf(local_exp);
                     let factor2: f64 = 1.0 - factor1;
                     for i in 0..params.len() {
                         params[i] = factor1 * parent_params[i] + factor2 * params[i];
@@ -554,7 +569,7 @@ mod tests {
         let initial_specimens = solver.random_specimens(200);
         solver.extend_specimens(initial_specimens);
         for _ in 0..1000 {
-            let new_specimens = solver.recombined_specimens(10, 0.0, f64::INFINITY);
+            let new_specimens = solver.recombined_specimens(10, 0.0, 0.0);
             solver.replace_worst_specimens(new_specimens);
         }
         for (param, goal) in solver
