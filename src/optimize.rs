@@ -455,7 +455,7 @@ where
     /// than `1.0`) selects a particular specimen with a correspondingly
     /// proportional chance to be modified. This allows performing more
     /// localized searches. A reasonable value seems to be
-    /// `1.0 / (60.0 * self.dim())`.
+    /// `0.01 / self.dim() as f64`.
     pub fn recombined_specimens(
         &mut self,
         children_count: usize,
