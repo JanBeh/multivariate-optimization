@@ -375,6 +375,12 @@ where
         self.specimens.truncate(count);
     }
     /// Return true if specimens have converged.
+    ///
+    /// Note that this method only returns true if the [cost] of all specimens
+    /// is exactly equal. Additional, more sensitive termination conditions may
+    /// be required in practice in order to avoid endless optimization.
+    ///
+    /// [cost]: Specimen::cmp_cost
     pub fn converged(&mut self) -> bool {
         let len = self.specimens.len();
         if len == 0 {
