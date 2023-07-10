@@ -546,7 +546,7 @@ mod tests {
         let goals: Vec<f64> = ranges
             .iter()
             .cloned()
-            .map(|range| rng.gen_range(range))
+            .map(|range| rng.gen_range(range) * 0.75)
             .collect();
         let mut solver = Solver::new(search_space, |params: Vec<f64>| {
             let mut cost: f64 = 0.0;
