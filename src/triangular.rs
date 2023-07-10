@@ -48,6 +48,8 @@ impl<T> Triangular<T> {
         T: Send,
     {
         let contents = &contents;
+        // TODO: Collect directly into boxed slice, see:
+        // https://github.com/rayon-rs/rayon/pull/1061
         let linear = (0..dim)
             .into_par_iter()
             .flat_map(|row| {
@@ -56,7 +58,7 @@ impl<T> Triangular<T> {
                     .map(move |col| (contents)((row, col)))
             })
             .collect::<Vec<_>>()
-            .into_boxed_slice(); // TODO: directly collect into boxed slice, if possible
+            .into_boxed_slice();
         Triangular { dim, linear }
     }
     /// Number of both rows and columns.
