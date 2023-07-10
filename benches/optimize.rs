@@ -17,7 +17,8 @@ fn main() {
                 })
             },
             |mut solver| {
-                solver.initialize(POPULATION);
+                let initial_specimens = solver.random_specimens(POPULATION);
+                solver.extend_specimens(initial_specimens);
             },
             BatchSize::SmallInput,
         );
@@ -32,11 +33,13 @@ fn main() {
                     let cost = rastrigin(&params);
                     BasicSpecimen { params, cost }
                 });
-                solver.initialize(POPULATION);
+                let initial_specimens = solver.random_specimens(POPULATION);
+                solver.extend_specimens(initial_specimens);
                 solver
             },
             |mut solver| {
-                solver.evolution(POPULATION);
+                let new_specimens = solver.recombined_specimens(POPULATION, 0.0);
+                solver.replace_worst_specimens(new_specimens);
             },
             BatchSize::SmallInput,
         );
