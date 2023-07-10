@@ -7,15 +7,15 @@ use std::ops::Deref;
 
 /// Memorizes random assignment of indices to groups.
 #[derive(Debug)]
-pub struct Conqueror {
+pub struct Splitter {
     assignments: Box<[usize]>,
     groups: Box<[Vec<usize>]>,
 }
 
-impl Conqueror {
+impl Splitter {
     /// Randomly assign indices to fixed number of groups.
     ///
-    /// Create a `Conqueror` struct, by randomly assigning indices (from
+    /// Create a `Splitter` struct, by randomly assigning indices (from
     /// `0..source_len`) to a fixed number of groups (`group_count`).
     /// The returned struct provides access to the created groups (containing
     /// their assigned indices, see [`groups`]) and allows merging of iterators
@@ -42,7 +42,7 @@ impl Conqueror {
                 groups[assignment].push(source_idx);
             }
         }
-        Conqueror {
+        Self {
             assignments,
             groups,
         }
@@ -72,12 +72,12 @@ impl Conqueror {
 
 #[cfg(test)]
 mod tests {
-    use super::Conqueror;
+    use super::Splitter;
     use rand::thread_rng;
     #[test]
     fn test_internal() {
         let mut rng = thread_rng();
-        let c = Conqueror::new(&mut rng, 100, 3);
+        let c = Splitter::new(&mut rng, 100, 3);
         let group_count = c.groups.len();
         assert_eq!(group_count, 3);
         for group in 0..group_count {
@@ -92,7 +92,7 @@ mod tests {
     fn test_run() {
         let mut rng = thread_rng();
         let specimens: Vec<char> = vec!['A', 'B', 'C', 'D', 'E'];
-        let c = Conqueror::new(&mut rng, specimens.len(), 2);
+        let c = Splitter::new(&mut rng, specimens.len(), 2);
         let parts = c
             .groups()
             .iter()

@@ -45,8 +45,8 @@
 //!
 //! See also [`Solver`].
 
-use crate::conquer::Conqueror;
 use crate::distributions::{MultivarNormDist, NormDist};
+use crate::splitter::Splitter;
 use crate::triangular::Triangular;
 
 use futures::stream::{FuturesOrdered, StreamExt};
@@ -452,16 +452,12 @@ where
     /// proportional chance to be modified. This allows performing more
     /// localized searches. A reasonable value seems to be
     /// `0.01 / self.dim() as f64`.
-    pub fn recombined_specimens(
-        &mut self,
-        children_count: usize,
-        local_factor: f64,
-    ) -> Vec<T> {
+    pub fn recombined_specimens(&mut self, children_count: usize, local_factor: f64) -> Vec<T> {
         self.sort();
         let total_count = self.specimens.len();
         let total_weight = total_count as f64;
-        let conqueror = Conqueror::new(&mut rand::thread_rng(), self.dim(), self.division_count());
-        let sub_averages = conqueror
+        let splitter = Splitter::new(&mut rand::thread_rng(), self.dim(), self.division_count());
+        let sub_averages = splitter
             .groups()
             .par_iter()
             .map(|group| {
@@ -478,7 +474,7 @@ where
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>(); // TODO: use boxed slice when supported by rayon
-        let sub_dists = conqueror
+        let sub_dists = splitter
             .groups()
             .par_iter()
             .zip(sub_averages.into_par_iter())
@@ -511,7 +507,7 @@ where
                 |rng, _| {
                     let param_groups_iter =
                         sub_dists.iter().map(|dist| dist.sample(rng).into_iter());
-                    let mut params: Vec<_> = conqueror.merge(param_groups_iter).collect();
+                    let mut params: Vec<_> = splitter.merge(param_groups_iter).collect();
                     let specimen = self.specimens.choose(rng).unwrap();
                     let parent_params = specimen.params();
                     let factor1: f64 = Standard.sample(rng);

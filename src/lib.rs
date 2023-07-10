@@ -6,9 +6,9 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #![warn(missing_docs)]
 
-pub mod conquer;
 pub mod distributions;
 pub mod optimize;
+pub mod splitter;
 pub mod testfuncs;
 pub mod triangular;
 
