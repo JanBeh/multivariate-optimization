@@ -2,6 +2,10 @@
 name = "multivariate-optimization"
 version = "0.0.1"
 edition = "2021"
+description = "Evolutionary optimization of multivariate functions"
+authors = ["Jan Behrens <jbe@magnetkern.de>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/JanBeh/multivariate-optimization"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
