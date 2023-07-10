@@ -404,19 +404,18 @@ where
         self.is_sorted = false;
         &mut self.specimens
     }
-    /// Consume [`Solver`] and return best [`Specimen`].
-    pub fn into_specimen(mut self) -> S {
-        self.sort();
-        self.specimens
-            .into_iter()
-            .next()
-            .expect("solver contains no specimen")
-    }
     /// Consume [`Solver`] and return all [`Specimen`]s, ordered by fitness
     /// (best first).
     pub fn into_specimens(mut self) -> Vec<S> {
         self.sort();
         self.specimens
+    }
+    /// Consume [`Solver`] and return best [`Specimen`].
+    pub fn into_specimen(self) -> S {
+        self.into_specimens()
+            .into_iter()
+            .next()
+            .expect("solver contains no specimen")
     }
 }
 
