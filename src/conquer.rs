@@ -20,7 +20,7 @@ impl Conqueror {
     /// The returned struct provides access to the created groups (containing
     /// their assigned indices, see [`groups`]) and allows merging of iterators
     /// (see [`merge`]).
-    /// If `group_count` is smaller than `input_len`, the number of groups is
+    /// If `group_count` is smaller than `source_len`, the number of groups is
     /// set (i.e. limited) to `input_len`.
     ///
     /// [`groups`]: Self::groups
