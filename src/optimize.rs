@@ -510,9 +510,11 @@ where
             .map_init(
                 || rand::thread_rng(),
                 |rng, _| {
-                    let param_groups_iter =
-                        sub_dists.iter().map(|dist| dist.sample(rng).into_iter());
-                    let mut params: Vec<_> = splitter.merge(param_groups_iter).collect();
+                    let param_groups_iters: Box<[_]> = sub_dists
+                        .iter()
+                        .map(|dist| dist.sample(rng).into_iter())
+                        .collect();
+                    let mut params: Vec<_> = splitter.merge(param_groups_iters).collect();
                     let specimen = self.specimens.choose(rng).unwrap();
                     let parent_params = specimen.params();
                     let factor1: f64 = Standard.sample(rng);

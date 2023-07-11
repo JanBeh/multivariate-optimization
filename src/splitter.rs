@@ -3,7 +3,7 @@
 
 use rand::{seq::SliceRandom, Rng};
 
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut, IndexMut};
 
 /// Memorizes random assignment of indices to groups.
 #[derive(Debug)]
@@ -56,12 +56,12 @@ impl Splitter {
         &self.groups
     }
     /// Merge iterators returning results for each group to a single iterator.
-    pub fn merge<'a, T, I, R>(&'a self, results: R) -> impl 'a + Iterator<Item = T>
+    pub fn merge<'a, T, I, R>(&'a self, mut results: R) -> impl 'a + Iterator<Item = T>
     where
         I: Iterator<Item = T> + 'a,
-        R: Iterator<Item = I>,
+        R: Deref + DerefMut + 'a,
+        <R as Deref>::Target: IndexMut<usize, Output = I>,
     {
-        let mut results = results.collect::<Box<_>>();
         self.assignments.iter().copied().map(move |assignment| {
             results[assignment]
                 .next()
@@ -96,7 +96,8 @@ mod tests {
         let parts = c
             .groups()
             .iter()
-            .map(|group| group.iter().map(|idx| specimens[*idx]));
+            .map(|group| group.iter().map(|idx| specimens[*idx]))
+            .collect::<Box<[_]>>();
         let merged: Vec<char> = c.merge(parts).collect();
         assert_eq!(specimens, merged);
     }
