@@ -3,7 +3,8 @@
 
 use rand::{seq::SliceRandom, Rng};
 
-use std::ops::{Deref, DerefMut, IndexMut};
+use std::borrow::BorrowMut;
+use std::ops::Deref;
 
 /// Memorizes random assignment of indices to groups.
 #[derive(Debug)]
@@ -59,11 +60,10 @@ impl Splitter {
     pub fn merge<'a, T, I, R>(&'a self, mut results: R) -> impl 'a + Iterator<Item = T>
     where
         I: Iterator<Item = T> + 'a,
-        R: Deref + DerefMut + 'a,
-        <R as Deref>::Target: IndexMut<usize, Output = I>,
+        R: BorrowMut<[I]> + 'a,
     {
         self.assignments.iter().copied().map(move |assignment| {
-            results[assignment]
+            results.borrow_mut()[assignment]
                 .next()
                 .unwrap_or_else(|| panic!("iterator for group #{} exhausted", assignment))
         })
