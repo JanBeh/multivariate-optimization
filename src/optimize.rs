@@ -232,13 +232,18 @@ impl<S, C> Solver<S, C> {
     /// See [`Solver::set_speed_factor`] for a high-level interface.
     pub fn set_division_count(&mut self, mut division_count: usize) {
         let dim = self.dim();
-        if division_count < 1 {
-            division_count = 1;
-        } else if division_count > dim {
-            division_count = dim;
+        if dim == 0 {
+            self.division_count = 1;
+            self.min_population = 0;
+        } else {
+            if division_count < 1 {
+                division_count = 1;
+            } else if division_count > dim {
+                division_count = dim;
+            }
+            self.division_count = division_count;
+            self.min_population = (dim - 1) / division_count + 1;
         }
-        self.division_count = division_count;
-        self.min_population = (self.dim() - 1) / division_count + 1;
     }
     /// Simplify calculation by dividing dimensions according to speed factor.
     ///
