@@ -6,6 +6,7 @@
 //! use multivariate_optimization::optimize::*;
 //! use multivariate_optimization::testfuncs::rastrigin;
 //! use rand::{Rng, thread_rng};
+//! use rayon::iter::{IntoParallelIterator, ParallelIterator};
 //! let mut rng = thread_rng();
 //!
 //! const DIM: usize = 3;
@@ -18,14 +19,22 @@
 //!
 //! const POPULATION: usize = 1000;
 //! const MAX_ITERATIONS: usize = 1000;
-//! let mut solver = Solver::new(search_space, |params| {
+//! let constructor = |params: Vec<f64>| {
 //!     let cost = rastrigin(&params);
 //!     BasicSpecimen { params, cost }
-//! });
+//! };
+//! let into_specimens =
+//!     |x: Vec<Vec<f64>>| x.into_par_iter().map(constructor).collect::<Vec<_>>();
+//!
+//! // `into_specimens` may be replaced with another mechanism, e.g. an `async` one
+//! // or, if no parallel computation is desired, one can simply use:
+//! // let into_specimens = |x: Vec<Vec<f64>>| x.into_iter().map(constructor);
+//!
+//! let mut solver = Solver::new(search_space);
 //! solver.set_speed_factor(0.5);
 //!
-//! let initial_specimens = solver.random_specimens(POPULATION);
-//! solver.extend_specimens(initial_specimens);
+//! let initial_params = solver.random_params(POPULATION);
+//! solver.extend_specimens(into_specimens(initial_params));
 //! for iter in 0..MAX_ITERATIONS {
 //!     let specimens = solver.specimens();
 //!     println!(
@@ -36,8 +45,8 @@
 //!     if solver.converged() {
 //!         break;
 //!     }
-//!     let new_specimens = solver.recombined_specimens(POPULATION, 0.0);
-//!     solver.replace_worst_specimens(new_specimens);
+//!     let new_params = solver.recombined_params(POPULATION, 0.0);
+//!     solver.replace_worst_specimens(into_specimens(new_params));
 //! }
 //! let specimen = solver.into_specimen();
 //! assert_eq!(specimen.cost, 0.0);
@@ -177,47 +186,36 @@ impl Specimen for BasicSpecimen {
 ///
 /// * [`Solver::new`]
 /// * [`Solver::set_speed_factor`]
-/// * Pass result of [`Solver::random_specimens`] to [`Solver::extend_specimens`]
+/// * Convert result of [`Solver::random_params`] into [specimens] and pass
+///   them to [`Solver::extend_specimens`]
 /// * In a loop:
 ///     * Inspect first element (or more elements) of [`Solver::specimens`],
 ///       e.g. for a break condition
-///     * Pass result of [`Solver::recombined_specimens`] to [`Solver::replace_worst_specimens`]
+///     * Convert result of [`Solver::recombined_params`] into [specimens] and
+///       pass them to [`Solver::replace_worst_specimens`]
 /// * Extract best specimen, e.g. using [`Solver::into_specimen`]
 ///
 /// See [module level documentation] for a code example.
 ///
+/// [specimens]: Specimen
 /// [module level documentation]: self
 #[derive(Clone, Debug)]
-pub struct Solver<S, C> {
+pub struct Solver<S> {
     search_space: Vec<SearchRange>,
     search_dists: Vec<SearchDist>,
-    constructor: C,
     division_count: usize,
     min_population: usize,
     is_sorted: bool,
     specimens: Vec<S>,
 }
 
-impl<S, C> Solver<S, C> {
-    /// Create `Solver` for search space and [`Specimen`] `constructor` closure.
+impl<S> Solver<S> {
+    /// Create `Solver` for search space.
     ///
-    /// The closure takes a [`Vec<f64>`] as argument, which contains the
-    /// coefficients/parameters, and it returns an [`S: Specimen`].
     /// See [module level documentation] for a code example.
     ///
-    /// Alternatively, [`Future`]s or [`Result`]s may be returned by the
-    /// closure. Note that when the closure returns `Future`s, then the methods
-    /// [`extend_specimens_async`] and [`replace_worst_specimens_async`] must
-    /// be used instead of their synchronous equivalents.
-    ///
-    /// [`S: Specimen`]: Specimen
     /// [module level documentation]: self
-    /// [`extend_specimens_async`]: Self::extend_specimens_async
-    /// [`replace_worst_specimens_async`]: Self::replace_worst_specimens_async
-    pub fn new<T>(search_space: Vec<SearchRange>, constructor: C) -> Self
-    where
-        C: Fn(Vec<f64>) -> T + Sync,
-    {
+    pub fn new(search_space: Vec<SearchRange>) -> Self {
         let search_dists: Vec<SearchDist> = search_space
             .iter()
             .copied()
@@ -226,7 +224,6 @@ impl<S, C> Solver<S, C> {
         let mut solver = Solver {
             search_space,
             search_dists,
-            constructor,
             division_count: Default::default(),
             min_population: Default::default(),
             is_sorted: true,
@@ -305,7 +302,7 @@ impl<S, C> Solver<S, C> {
     }
 }
 
-impl<S, C> Solver<S, C>
+impl<S> Solver<S>
 where
     S: Specimen + Send,
 {
@@ -404,47 +401,38 @@ where
     }
 }
 
-impl<S, C, T> Solver<S, C>
+impl<S> Solver<S>
 where
     S: Specimen + Send + Sync,
-    C: Fn(Vec<f64>) -> T + Sync,
-    T: Send,
 {
-    /// Create random specimen (optionally async if `T` is a [`Future`]).
-    fn random_specimen<R>(&self, rng: &mut R) -> T
+    /// Create parameters for a single specimen.
+    fn random_single_params<R>(&self, rng: &mut R) -> Vec<f64>
     where
         R: Rng + ?Sized,
     {
-        (self.constructor)(
-            self.search_dists
-                .iter()
-                .map(|dist| dist.sample(rng))
-                .collect::<Vec<f64>>(),
-        )
+        self.search_dists
+            .iter()
+            .map(|dist| dist.sample(rng))
+            .collect::<Vec<f64>>()
     }
-    /// Create random specimens
-    ///
-    /// Note that depending on the return type of the closure passed to
-    /// [`Solver::new`], a [`Vec`] of [`Future`]s or [`Result`]s may be
-    /// returned.
-    pub fn random_specimens(&self, count: usize) -> Vec<T> {
+    /// Create parameters for random specimens.
+    pub fn random_params(&self, count: usize) -> Vec<Vec<f64>> {
         (0..count)
             .into_par_iter()
-            .map_init(|| rand::thread_rng(), |rng, _| self.random_specimen(rng))
+            .map_init(
+                || rand::thread_rng(),
+                |rng, _| self.random_single_params(rng),
+            )
             .collect()
     }
-    /// Create recombined specimens.
-    ///
-    /// Note that depending on the return type of the closure passed to
-    /// [`Solver::new`], a [`Vec`] of [`Future`]s or [`Result`]s may be
-    /// returned.
+    /// Create parameters for recombined specimens.
     ///
     /// Setting the `local_factor` to a value greater than `0.0` (but smaller
     /// than `1.0`) selects a particular specimen with a correspondingly
     /// proportional chance to be modified. This allows performing more
     /// localized searches. A reasonable value seems to be
     /// `0.01 / self.dim() as f64`.
-    pub fn recombined_specimens(&mut self, children_count: usize, local_factor: f64) -> Vec<T> {
+    pub fn recombined_params(&mut self, children_count: usize, local_factor: f64) -> Vec<Vec<f64>> {
         self.sort();
         let total_count = self.specimens.len();
         let total_weight = total_count as f64;
@@ -511,11 +499,11 @@ where
                         params[i] = factor1 * parent_params[i] + factor2 * params[i];
                         if let SearchRange::Finite { low, high } = self.search_space[i] {
                             if !(low..=high).contains(&params[i]) {
-                                return self.random_specimen(rng);
+                                return self.random_single_params(rng);
                             }
                         }
                     }
-                    (self.constructor)(params)
+                    params
                 },
             )
             .collect()
@@ -526,6 +514,7 @@ where
 mod tests {
     use super::{BasicSpecimen, SearchRange, Solver, Specimen as _};
     use rand::{thread_rng, Rng};
+    use rayon::iter::{IntoParallelIterator, ParallelIterator};
     #[test]
     fn test_solver() {
         let mut rng = thread_rng();
@@ -537,18 +526,21 @@ mod tests {
             .cloned()
             .map(|range| rng.gen_range(range) * 0.75)
             .collect();
-        let mut solver = Solver::new(search_space, |params: Vec<f64>| {
+        let constructor = |params: Vec<f64>| {
             let mut cost: f64 = 0.0;
             for (param, goal) in params.iter().zip(goals.iter()) {
                 cost += (param - goal) * (param - goal);
             }
             BasicSpecimen { params, cost }
-        });
-        let initial_specimens = solver.random_specimens(200);
-        solver.extend_specimens(initial_specimens);
+        };
+        let into_specimens =
+            |x: Vec<Vec<f64>>| x.into_par_iter().map(constructor).collect::<Vec<_>>();
+        let mut solver = Solver::new(search_space);
+        let initial_params = solver.random_params(200);
+        solver.extend_specimens(into_specimens(initial_params));
         for _ in 0..1000 {
-            let new_specimens = solver.recombined_specimens(10, 0.0);
-            solver.replace_worst_specimens(new_specimens);
+            let new_params = solver.recombined_params(10, 0.0);
+            solver.replace_worst_specimens(into_specimens(new_params));
         }
         for (param, goal) in solver
             .specimens
