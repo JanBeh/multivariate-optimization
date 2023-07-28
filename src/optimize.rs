@@ -199,8 +199,25 @@ pub struct Solver<S, C> {
 }
 
 impl<S, C> Solver<S, C> {
-    /// Generic variant of [`Solver::new`].
-    fn new_generic(search_space: Vec<SearchRange>, constructor: C) -> Self {
+    /// Create `Solver` for search space and [`Specimen`] `constructor` closure.
+    ///
+    /// The closure takes a [`Vec<f64>`] as argument, which contains the
+    /// coefficients/parameters, and it returns an [`S: Specimen`].
+    /// See [module level documentation] for a code example.
+    ///
+    /// Alternatively, [`Future`]s or [`Result`]s may be returned by the
+    /// closure. Note that when the closure returns `Future`s, then the methods
+    /// [`extend_specimens_async`] and [`replace_worst_specimens_async`] must
+    /// be used instead of their synchronous equivalents.
+    ///
+    /// [`S: Specimen`]: Specimen
+    /// [module level documentation]: self
+    /// [`extend_specimens_async`]: Self::extend_specimens_async
+    /// [`replace_worst_specimens_async`]: Self::replace_worst_specimens_async
+    pub fn new<T>(search_space: Vec<SearchRange>, constructor: C) -> Self
+    where
+        C: Fn(Vec<f64>) -> T + Sync,
+    {
         let search_dists: Vec<SearchDist> = search_space
             .iter()
             .copied()
@@ -285,43 +302,6 @@ impl<S, C> Solver<S, C> {
     /// into which the dimensions are split when calculating covariances.
     pub fn min_population(&self) -> usize {
         self.min_population
-    }
-}
-
-impl<S, C> Solver<S, C>
-where
-    C: Fn(Vec<f64>) -> S + Sync,
-{
-    /// Create `Solver` for search space and [`Specimen`] `constructor` closure.
-    ///
-    /// The closure takes a [`Vec<f64>`] as argument, which contains the
-    /// coefficients/parameters, and it returns an [`S: Specimen`].
-    /// See [module level documentation] for a code example.
-    ///
-    /// For asynchronous constructors, method [`Solver::new_async`] can be used.
-    ///
-    /// [`S: Specimen`]: Specimen
-    /// [module level documentation]: self
-    pub fn new(search_space: Vec<SearchRange>, constructor: C) -> Self {
-        Self::new_generic(search_space, constructor)
-    }
-}
-
-impl<S, C, F> Solver<S, C>
-where
-    C: Fn(Vec<f64>) -> F + Sync,
-    F: Future<Output = S> + Send,
-{
-    /// Same as [`Solver::new`], but takes an asynchronous `constructor`.
-    ///
-    /// Note that when using this method, methods [`extend_specimens_async`]
-    /// and [`replace_worst_specimens_async`] must also be used instead of
-    /// their synchronous equivalents.
-    ///
-    /// [`extend_specimens_async`]: Self::extend_specimens_async
-    /// [`replace_worst_specimens_async`]: Self::replace_worst_specimens_async
-    pub fn new_async(search_space: Vec<SearchRange>, constructor: C) -> Self {
-        Self::new_generic(search_space, constructor)
     }
 }
 
@@ -444,8 +424,9 @@ where
     }
     /// Create random specimens
     ///
-    /// If `Solver` was created with [`Solver::new_async`], then [`Future`]s of
-    /// specimens are returned instead.
+    /// Note that depending on the return type of the closure passed to
+    /// [`Solver::new`], a [`Vec`] of [`Future`]s or [`Result`]s may be
+    /// returned.
     pub fn random_specimens(&self, count: usize) -> Vec<T> {
         (0..count)
             .into_par_iter()
@@ -454,8 +435,9 @@ where
     }
     /// Create recombined specimens.
     ///
-    /// If `Solver` was created with [`Solver::new_async`], then [`Future`]s of
-    /// specimens are returned instead.
+    /// Note that depending on the return type of the closure passed to
+    /// [`Solver::new`], a [`Vec`] of [`Future`]s or [`Result`]s may be
+    /// returned.
     ///
     /// Setting the `local_factor` to a value greater than `0.0` (but smaller
     /// than `1.0`) selects a particular specimen with a correspondingly
