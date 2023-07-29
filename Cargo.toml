@@ -1,6 +1,6 @@
 [package]
 name = "multivariate-optimization"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 description = "Evolutionary optimization of multivariate functions"
 authors = ["Jan Behrens <jbe@magnetkern.de>"]
